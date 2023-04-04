@@ -39,7 +39,7 @@
        [Extensions.Expression.t].  It contains one constructor for each of the
        AST types defined as described in design point (1).  This addresses
        concern (2); we can now match on actual OCaml constructors, as long as we
-       can get a hold of them.  And to do that…
+       can get ahold of them.  And to do that…
 
     c. We define a general scheme for how we represent language extensions in
        terms of the existing ASTs, and provide a few primitives for
@@ -162,7 +162,6 @@ module Module_type : AST with type ast      = Parsetree.module_type
     Then, the [Make_of_ast] functor produces the functions that actually
     convert from the Parsetree AST to the extensions one. *)
 module type Of_ast_parameters = sig
-
   (** Which syntactic category is this concerning? e.g. [module AST = Expression] *)
   module AST : AST
 
