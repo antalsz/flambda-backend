@@ -1148,9 +1148,11 @@ let rec copy ?partial ?keep_names scope ty =
     if forget <> generic_level then
       (* XXX layouts: we probably need an accurate layout here?  But it's a
          pain. *)
-      newty2 ~level:forget (Tvar { name = None; layout = Layout.any })
+      newty2
+        ~level:forget
+        (Tvar { name = None; layout = (Layout.any ~missing_cmi_for:None) })
     else
-    let t = newstub ~scope:(get_scope ty) Layout.any in
+    let t = newstub ~scope:(get_scope ty) (Layout.any ~missing_cmi_for:None) in
     For_copy.redirect_desc scope ty (Tsubst (t, None));
     let desc' =
       match desc with
@@ -1441,7 +1443,7 @@ let rec copy_sep ~cleanup_scope ~fixed ~free ~bound ~may_share
   if is_Tvar ty || may_share && TypeSet.is_empty univars then
     if get_level ty <> generic_level then ty else
     (* layout not consulted during copy_sep, so Any is safe *)
-    let t = newstub ~scope:(get_scope ty) Layout.any in
+    let t = newstub ~scope:(get_scope ty) (Layout.any ~missing_cmi_for:None) in
     delayed_copy :=
       lazy (Transient_expr.set_stub_desc t (Tlink (copy cleanup_scope ty)))
       :: !delayed_copy;
@@ -1452,7 +1454,7 @@ let rec copy_sep ~cleanup_scope ~fixed ~free ~bound ~may_share
     if dl <> [] && conflicts univars dl then raise Not_found;
     t
   with Not_found -> begin
-    let t = newstub ~scope:(get_scope ty) Layout.any in
+    let t = newstub ~scope:(get_scope ty) (Layout.any ~missing_cmi_for:None) in
     let desc = get_desc ty in
     let visited =
       match desc with
@@ -1577,7 +1579,7 @@ let subst env level priv abbrev oty params args body =
   if List.length params <> List.length args then raise Cannot_subst;
   let old_level = !current_level in
   current_level := level;
-  let body0 = newvar Layout.any in          (* Stub *)
+  let body0 = newvar (Layout.any ~missing_cmi_for:None) in          (* Stub *)
   let undo_abbrev =
     match oty with
     | None -> fun () -> () (* No abbreviation added *)
@@ -1931,7 +1933,7 @@ let rec estimate_type_layout env ty =
   | Tconstr(p, _, _) -> begin
       match Env.find_type p env with
       | { type_kind = k } -> Layout (layout_bound_of_kind k)
-      | exception Not_found -> Layout any
+      | exception Not_found -> Layout (any ~missing_cmi_for:(Some p))
     end
   | Tvariant row ->
       (* if all labels are devoid of arguments, not a pointer *)
@@ -2000,7 +2002,7 @@ let rec constrain_type_layout ~reason ~fixed env ty layout fuel =
       let layout_bound =
         begin match Env.find_type p env with
         | { type_kind = k; _ } -> layout_bound_of_kind k
-        | exception Not_found -> Layout.any
+        | exception Not_found -> Layout.any ~missing_cmi_for:(Some p)
         end
       in
       match Layout.sub ~reason layout_bound layout with
@@ -2020,7 +2022,8 @@ let rec constrain_type_layout ~reason ~fixed env ty layout fuel =
 let constrain_type_layout ~reason ~fixed env ty layout fuel =
   (* An optimization to avoid doing any work if we're checking against
      any. *)
-  if Layout.(equal layout any) then Ok Layout.any
+  if Layout.(equal layout (any ~missing_cmi_for:None))
+  then Ok layout
   else constrain_type_layout ~reason ~fixed env ty layout fuel
 
 let check_type_layout ~reason env ty layout =
@@ -5881,7 +5884,9 @@ let rec nondep_type_rec ?(expand_private=false) env ids ty =
     Tvar _ | Tunivar _ -> ty
   | _ -> try TypeHash.find nondep_hash ty
   with Not_found ->
-    let ty' = newgenstub ~scope:(get_scope ty) Layout.any in
+    let ty' =
+      newgenstub ~scope:(get_scope ty) (Layout.any ~missing_cmi_for:None)
+    in
     TypeHash.add nondep_hash ty ty';
     match
       match get_desc ty with
