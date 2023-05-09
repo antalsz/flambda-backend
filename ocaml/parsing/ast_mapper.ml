@@ -70,8 +70,12 @@ type mapper = {
   payload: mapper -> payload -> payload;
   signature: mapper -> signature -> signature;
   signature_item: mapper -> signature_item -> signature_item;
+  signature_item_extension: mapper ->
+    Extensions.Signature_item.t -> Extensions.Signature_item.t;
   structure: mapper -> structure -> structure;
   structure_item: mapper -> structure_item -> structure_item;
+  structure_item_extension: mapper ->
+    Extensions.Structure_item.t -> Extensions.Structure_item.t;
   typ: mapper -> core_type -> core_type;
   type_declaration: mapper -> type_declaration -> type_declaration;
   type_extension: mapper -> type_extension -> type_extension;
@@ -316,9 +320,30 @@ module MT = struct
     | Pwith_modtypesubst (lid, mty) ->
         Pwith_modtypesubst (map_loc sub lid, sub.module_type sub mty)
 
-  let map_signature_item sub {psig_desc = desc; psig_loc = loc} =
+  module IF = Extensions.Include_functor
+
+  let map_sig_include_functor sub : IF.signature_item -> IF.signature_item =
+    function
+    | Ifsig_include_functor incl ->
+        Ifsig_include_functor (sub.include_description sub incl)
+
+  let map_signature_item_ext sub :
+    Extensions.Signature_item.t -> Extensions.Signature_item.t =
+    function
+    | Esig_include_functor ifincl ->
+        Esig_include_functor (map_sig_include_functor sub ifincl)
+
+  let map_signature_item sub ({psig_desc = desc; psig_loc = loc} as sigi) =
     let open Sig in
     let loc = sub.location sub loc in
+    match Extensions.Signature_item.of_ast sigi with
+    | Some esigi -> begin
+        Extensions_parsing.Signature_item.wrap_desc ~loc ~attrs:[] @@
+        match sub.signature_item_extension sub esigi with
+        | Esig_include_functor incl ->
+            Extensions.Include_functor.sig_item_of ~loc incl
+    end
+    | None ->
     match desc with
     | Psig_value vd -> value ~loc (sub.value_description sub vd)
     | Psig_type (rf, l) ->
@@ -375,9 +400,30 @@ module M = struct
     | Pmod_unpack e -> unpack ~loc ~attrs (sub.expr sub e)
     | Pmod_extension x -> extension ~loc ~attrs (sub.extension sub x)
 
-  let map_structure_item sub {pstr_loc = loc; pstr_desc = desc} =
+  module IF = Extensions.Include_functor
+
+  let map_str_include_functor sub : IF.structure_item -> IF.structure_item =
+    function
+    | Ifstr_include_functor incl ->
+        Ifstr_include_functor (sub.include_declaration sub incl)
+
+  let map_structure_item_ext sub :
+    Extensions.Structure_item.t -> Extensions.Structure_item.t =
+    function
+    | Estr_include_functor ifincl ->
+        Estr_include_functor (map_str_include_functor sub ifincl)
+
+  let map_structure_item sub ({pstr_loc = loc; pstr_desc = desc} as stri) =
     let open Str in
     let loc = sub.location sub loc in
+    match Extensions.Structure_item.of_ast stri with
+    | Some estri -> begin
+        Extensions_parsing.Structure_item.wrap_desc ~loc ~attrs:[] @@
+        match sub.structure_item_extension sub estri with
+        | Estr_include_functor incl ->
+            Extensions.Include_functor.str_item_of ~loc incl
+    end
+    | None ->
     match desc with
     | Pstr_eval (x, attrs) ->
         let attrs = sub.attributes sub attrs in
@@ -670,9 +716,11 @@ let default_mapper =
     constant = C.map;
     structure = (fun this l -> List.map (this.structure_item this) l);
     structure_item = M.map_structure_item;
+    structure_item_extension = M.map_structure_item_ext;
     module_expr = M.map;
     signature = (fun this l -> List.map (this.signature_item this) l);
     signature_item = MT.map_signature_item;
+    signature_item_extension = MT.map_signature_item_ext;
     module_type = MT.map;
     module_type_extension = MT.map_extension;
     with_constraint = MT.map_with_constraint;
