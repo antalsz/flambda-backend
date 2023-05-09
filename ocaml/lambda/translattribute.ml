@@ -27,10 +27,12 @@ let is_inlined_attribute =
   ]
 
 let is_specialise_attribute =
-  [ ["specialise"; "ocaml.specialise"], Config.flambda ]
+  [ [ "specialise"; "ocaml.specialise"
+    ; "specialize"; "ocaml.specialize" ], Config.flambda ]
 
 let is_specialised_attribute =
-  [ ["specialised"; "ocaml.specialised"], Config.flambda ]
+  [ [ "specialised"; "ocaml.specialised"
+    ; "specialized"; "ocaml.specialized" ], Config.flambda ]
 
 let is_local_attribute =
   [ ["local"; "ocaml.local"], true ]
