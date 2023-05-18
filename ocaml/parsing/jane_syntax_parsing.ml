@@ -482,6 +482,12 @@ module type AST_internal = sig
   val match_jane_syntax : ast -> (Embedded_name.t * ast) option
 end
 
+module type AST_with_attributes_internal = sig
+  include AST_internal
+  val add_attributes : attributes -> ast -> ast
+  val set_attributes : ast -> attributes -> ast
+end
+
 (* Parses the embedded name from an embedding, raising if
     the embedding is malformed. Malformed means either:
 
@@ -536,8 +542,9 @@ module Make_with_attribute
        include AST_syntactic_category
 
        val attributes : ast -> attributes
-       val with_attributes : ast -> attributes -> ast
-     end) : AST_internal with type ast = AST_syntactic_category.ast
+       val set_attributes : ast -> attributes -> ast
+     end) : AST_with_attributes_internal
+              with type ast = AST_syntactic_category.ast
 = struct
     include AST_syntactic_category
 
@@ -553,12 +560,14 @@ module Make_with_attribute
         ; attr_payload = PStr []
         }
       in
-      with_attributes ast (attr :: attributes ast)
+      set_attributes ast (attr :: attributes ast)
 
     let match_jane_syntax ast =
       match find_and_remove_jane_syntax_attribute (attributes ast) with
       | None -> None
-      | Some (name, attrs) -> Some (name, with_attributes ast attrs)
+      | Some (name, attrs) -> Some (name, set_attributes ast attrs)
+
+    let add_attributes attrs ast = set_attributes ast (attrs @ attributes ast)
 end
 
 (** For a syntactic category, produce translations into and out of
@@ -629,7 +638,7 @@ module Type_AST_syntactic_category = struct
   let with_location typ l = { typ with ptyp_loc = l }
 
   let attributes typ = typ.ptyp_attributes
-  let with_attributes typ ptyp_attributes = { typ with ptyp_attributes }
+  let set_attributes typ ptyp_attributes = { typ with ptyp_attributes }
 end
 
 (** Types; embedded as [[[%jane.FEATNAME] * BODY]]. *)
@@ -655,7 +664,7 @@ module Expression0 = Make_with_attribute (struct
   let with_location expr l = { expr with pexp_loc = l }
 
   let attributes expr = expr.pexp_attributes
-  let with_attributes expr pexp_attributes = { expr with pexp_attributes }
+  let set_attributes expr pexp_attributes = { expr with pexp_attributes }
 end)
 
 (** Patterns; embedded using an attribute on the pattern. *)
@@ -667,7 +676,7 @@ module Pattern0 = Make_with_attribute (struct
   let with_location pat l = { pat with ppat_loc = l }
 
   let attributes pat = pat.ppat_attributes
-  let with_attributes pat ppat_attributes = { pat with ppat_attributes }
+  let set_attributes pat ppat_attributes = { pat with ppat_attributes }
 end)
 
 (** Module types; embedded using an attribute on the module type. *)
@@ -679,7 +688,7 @@ module Module_type0 = Make_with_attribute (struct
     let with_location mty l = { mty with pmty_loc = l }
 
     let attributes mty = mty.pmty_attributes
-    let with_attributes mty pmty_attributes = { mty with pmty_attributes }
+    let set_attributes mty pmty_attributes = { mty with pmty_attributes }
 end)
 
 (** Extension constructors; embedded using an attribute. *)
@@ -691,7 +700,7 @@ module Extension_constructor0 = Make_with_attribute (struct
     let with_location ext l = { ext with pext_loc = l }
 
     let attributes ext = ext.pext_attributes
-    let with_attributes ext pext_attributes = { ext with pext_attributes }
+    let set_attributes ext pext_attributes = { ext with pext_attributes }
 end)
 
 (** Signature items; embedded as
@@ -777,6 +786,12 @@ module type AST = sig
     of_ast_internal:(Feature.t -> ast -> 'a option) -> (ast -> 'a option)
 end
 
+module type AST_with_attributes = sig
+  include AST
+  val add_attributes : attributes -> ast -> ast
+  val set_attributes : ast -> attributes -> ast
+end
+
 module Make_ast (AST : AST_internal) : AST with type ast = AST.ast = struct
   include AST
 
@@ -819,11 +834,20 @@ module Make_ast (AST : AST_internal) : AST with type ast = AST.ast = struct
     of_ast
 end
 
-module Expression = Make_ast(Expression0)
-module Pattern = Make_ast(Pattern0)
-module Module_type = Make_ast(Module_type0)
+module Make_attribute_ast (AST : AST_with_attributes_internal)
+  : AST_with_attributes with type ast = AST.ast =
+struct
+  include Make_ast (AST)
+
+  let add_attributes = AST.add_attributes
+  let set_attributes = AST.set_attributes
+end
+
+module Expression = Make_attribute_ast(Expression0)
+module Pattern = Make_attribute_ast(Pattern0)
+module Module_type = Make_attribute_ast(Module_type0)
 module Signature_item = Make_ast(Signature_item0)
 module Structure_item = Make_ast(Structure_item0)
-module Core_type = Make_ast(Core_type0)
-module Constructor_argument = Make_ast(Constructor_argument0)
-module Extension_constructor = Make_ast(Extension_constructor0)
+module Core_type = Make_attribute_ast(Core_type0)
+module Constructor_argument = Make_attribute_ast(Constructor_argument0)
+module Extension_constructor = Make_attribute_ast(Extension_constructor0)

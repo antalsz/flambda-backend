@@ -140,9 +140,7 @@ end
 (** Each syntactic category that contains novel syntactic features has a
     corresponding module of this module type.  We're adding these lazily as we
     need them. When you add another one, make sure also to add special handling
-    in [Ast_iterator] and [Ast_mapper].
-
-*)
+    in [Ast_iterator] and [Ast_mapper]. *)
 module type AST = sig
   (** The AST type (e.g., [Parsetree.expression]) *)
   type ast
@@ -193,14 +191,28 @@ module type AST = sig
     -> (ast -> 'a option)
 end
 
+(** As [AST], but includes attribute-manipulating functions.  These can be
+    useful when writing new Jane-syntax features using the attribute
+    encoding. *)
+module type AST_with_attributes = sig
+  include AST
+
+  (** Add attributes to an AST term, appending them to the attributes already
+      present. *)
+  val add_attributes : Parsetree.attributes -> ast -> ast
+
+  (** Redefine the attributes on an AST term. *)
+  val set_attributes : ast -> Parsetree.attributes -> ast
+end
+
 module Expression :
-  AST with type ast = Parsetree.expression
+  AST_with_attributes with type ast = Parsetree.expression
 
 module Pattern :
-  AST with type ast = Parsetree.pattern
+  AST_with_attributes with type ast = Parsetree.pattern
 
 module Module_type :
-  AST with type ast = Parsetree.module_type
+  AST_with_attributes with type ast = Parsetree.module_type
 
 module Signature_item :
   AST with type ast = Parsetree.signature_item
@@ -209,13 +221,13 @@ module Structure_item :
   AST with type ast = Parsetree.structure_item
 
 module Core_type :
-  AST with type ast = Parsetree.core_type
+  AST_with_attributes with type ast = Parsetree.core_type
 
 module Constructor_argument :
-  AST with type ast = Parsetree.core_type
+  AST_with_attributes with type ast = Parsetree.core_type
 
 module Extension_constructor :
-  AST with type ast = Parsetree.extension_constructor
+  AST_with_attributes with type ast = Parsetree.extension_constructor
 
 (** Require that an extension is enabled for at least the provided level, or
     else throw an exception (of an abstract type) at the provided location

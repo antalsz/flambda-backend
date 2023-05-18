@@ -41,6 +41,103 @@ open Jane_syntax_parsing
    future syntax features to remember to do this wrapping.
 *)
 
+(** Locality modes *)
+module Local = struct
+  let feature : Feature.t = Language_extension Local
+  let extension_string = Feature.extension_component feature
+
+  type constructor_argument = Lcarg_global of core_type
+
+  type nonrec core_type = Ltyp_local of core_type
+
+  type nonrec expression = Lexp_local of expression
+
+  type nonrec pattern = Lpat_local of pattern
+
+  module Desugaring_error = struct
+    type error =
+      | Non_mode_embedding of Embedded_name.t
+      | Non_embedding
+      | Bad_mode_embedding of string list
+
+    let report_error ~loc = function
+      | Non_mode_embedding name ->
+          Location.errorf ~loc
+            "Tried to desugar the non-modal embedded term %a@ \
+             as part of a modal term"
+            Embedded_name.pp_quoted_name name
+      | Non_embedding ->
+          Location.errorf ~loc
+            "Tried to desugar a non-embedded expression as part of a modal term"
+      | Bad_mode_embedding subparts ->
+          Location.errorf ~loc
+            "Unknown, unexpected, or malformed@ modal embedded term %a"
+            Embedded_name.pp_quoted_name
+            (Embedded_name.of_feature feature subparts)
+
+    exception Error of Location.t * error
+
+    let () =
+      Location.register_error_of_exn
+        (function
+          | Error(loc, err) -> Some (report_error ~loc err)
+          | _ -> None)
+
+    let raise carg err = raise (Error(carg.ptyp_loc, err))
+  end
+
+  let type_of ~loc ~attrs = function
+    | Ltyp_local typ ->
+      (* See Note [Wrapping with make_entire_jane_syntax] *)
+      Core_type.make_entire_jane_syntax ~loc feature (fun () ->
+        Core_type.add_attributes attrs typ)
+
+  let of_type typ = Ltyp_local typ, typ.ptyp_attributes
+
+  let constr_arg_of ~loc ~attrs lcarg =
+    (* See Note [Wrapping with make_entire_jane_syntax] *)
+    Core_type.make_entire_jane_syntax ~loc feature (fun () ->
+      match lcarg with
+      | Lcarg_global carg ->
+          Constructor_argument.add_attributes attrs @@
+          Constructor_argument.make_jane_syntax feature ["global"] carg)
+
+  let of_constr_arg carg =
+    let ecarg =
+      match find_and_remove_jane_syntax_attribute carg.ptyp_attributes with
+      | Some (embedded_name, attrs) -> begin
+          let carg = Constructor_argument.add_attributes attrs carg in
+          match Embedded_name.components embedded_name with
+          | locals :: subparts when String.equal locals extension_string ->
+            begin
+              match subparts with
+              | ["global"] -> Lcarg_global carg
+              | _ -> Desugaring_error.raise carg (Bad_mode_embedding subparts)
+            end
+          | _ -> Desugaring_error.raise carg (Non_mode_embedding embedded_name)
+        end
+      | None ->
+        Desugaring_error.raise carg Non_embedding
+    in
+    ecarg, carg.ptyp_attributes
+
+  let expr_of ~loc ~attrs = function
+    | Lexp_local expr ->
+      (* See Note [Wrapping with make_entire_jane_syntax] *)
+      Expression.make_entire_jane_syntax ~loc feature (fun () ->
+        Expression.add_attributes attrs expr)
+
+  let of_expr expr = Lexp_local expr, expr.pexp_attributes
+
+  let pat_of ~loc ~attrs = function
+    | Lpat_local pat ->
+      (* See Note [Wrapping with make_entire_jane_syntax] *)
+      Pattern.make_entire_jane_syntax ~loc feature (fun () ->
+        Pattern.add_attributes attrs pat)
+
+  let of_pat pat = Lpat_local pat, pat.ppat_attributes
+end
+
 (** List and array comprehensions *)
 module Comprehensions = struct
   let feature : Feature.t = Language_extension Comprehensions
@@ -141,7 +238,8 @@ module Comprehensions = struct
 
   let expr_of ~loc ~attrs cexpr =
     (* See Note [Wrapping with make_entire_jane_syntax] *)
-    let expr = Expression.make_entire_jane_syntax ~loc feature (fun () ->
+    Expression.make_entire_jane_syntax ~loc feature (fun () ->
+      Expression.add_attributes attrs @@
       match cexpr with
       | Cexp_list_comprehension comp ->
           expr_of_comprehension ~type_:["list"] comp
@@ -153,8 +251,6 @@ module Comprehensions = struct
                      | Immutable -> "immutable"
                    ]
             comp)
-    in
-    { expr with pexp_attributes = expr.pexp_attributes @ attrs }
 
   (** Then, we define how to go from the OCaml AST to the nice AST; this is
       the [..._of_expr] family of expressions, culminating in
@@ -202,10 +298,10 @@ module Comprehensions = struct
   let expand_comprehension_extension_expr expr =
     match find_and_remove_jane_syntax_attribute expr.pexp_attributes with
     | Some (ext_name, attributes) -> begin
-        match Jane_syntax_parsing.Embedded_name.components ext_name with
+        match Embedded_name.components ext_name with
         | comprehensions :: names
           when String.equal comprehensions extension_string ->
-            names, { expr with pexp_attributes = attributes }
+            names, Expression.set_attributes expr attributes
         | _ :: _ ->
             Desugaring_error.raise expr (Non_comprehension_embedding ext_name)
       end
@@ -424,18 +520,26 @@ module type AST = sig
 end
 
 module Core_type = struct
-  type t = |
+  type t =
+    | Jtyp_local of Local.core_type
 
-  let of_ast_internal (feat : Feature.t) _typ = match feat with
+  let of_ast_internal (feat : Feature.t) typ = match feat with
+    | Language_extension Local ->
+      let typ, attrs = Local.of_type typ in
+      Some (Jtyp_local typ, attrs)
     | _ -> None
 
   let of_ast = Core_type.make_of_ast ~of_ast_internal
 end
 
 module Constructor_argument = struct
-  type t = |
+  type t =
+    | Jcarg_local of Local.constructor_argument
 
-  let of_ast_internal (feat : Feature.t) _carg = match feat with
+  let of_ast_internal (feat : Feature.t) carg = match feat with
+    | Language_extension Local ->
+      let carg, attrs = Local.of_constr_arg carg in
+      Some (Jcarg_local carg, attrs)
     | _ -> None
 
   let of_ast = Constructor_argument.make_of_ast ~of_ast_internal
@@ -443,11 +547,15 @@ end
 
 module Expression = struct
   type t =
+    | Jexp_local           of Local.expression
     | Jexp_comprehension   of Comprehensions.expression
     | Jexp_immutable_array of Immutable_arrays.expression
     | Jexp_unboxed_constant of Unboxed_constants.expression
 
   let of_ast_internal (feat : Feature.t) expr = match feat with
+    | Language_extension Local ->
+      let expr, attrs = Local.of_expr expr in
+      Some (Jexp_local expr, attrs)
     | Language_extension Comprehensions ->
       let expr, attrs = Comprehensions.comprehension_expr_of_expr expr in
       Some (Jexp_comprehension expr, attrs)
@@ -462,6 +570,7 @@ module Expression = struct
   let of_ast = Expression.make_of_ast ~of_ast_internal
 
   let expr_of ~loc ~attrs = function
+    | Jexp_local            x -> Local.expr_of             ~loc ~attrs x
     | Jexp_comprehension    x -> Comprehensions.expr_of    ~loc ~attrs x
     | Jexp_immutable_array  x -> Immutable_arrays.expr_of  ~loc ~attrs x
     | Jexp_unboxed_constant x -> Unboxed_constants.expr_of ~loc ~attrs x
@@ -469,13 +578,17 @@ end
 
 module Pattern = struct
   type t =
+    | Jpat_local           of Local.pattern
     | Jpat_immutable_array of Immutable_arrays.pattern
     | Jpat_unboxed_constant of Unboxed_constants.pattern
 
   let of_ast_internal (feat : Feature.t) pat = match feat with
+    | Language_extension Local ->
+      let pat, attrs = Local.of_pat pat in
+      Some (Jpat_local pat, attrs)
     | Language_extension Immutable_arrays ->
-      let expr, attrs = Immutable_arrays.of_pat pat in
-      Some (Jpat_immutable_array expr, attrs)
+      let pat, attrs = Immutable_arrays.of_pat pat in
+      Some (Jpat_immutable_array pat, attrs)
     | Language_extension Layouts ->
       let pat, attrs = Unboxed_constants.of_pat pat in
       Some (Jpat_unboxed_constant pat, attrs)
@@ -484,6 +597,7 @@ module Pattern = struct
   let of_ast = Pattern.make_of_ast ~of_ast_internal
 
   let pat_of ~loc ~attrs = function
+    | Jpat_local x -> Local.pat_of ~loc ~attrs x
     | Jpat_immutable_array x -> Immutable_arrays.pat_of ~loc ~attrs x
     | Jpat_unboxed_constant x -> Unboxed_constants.pat_of ~loc ~attrs x
 end

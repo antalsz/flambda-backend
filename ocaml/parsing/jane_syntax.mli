@@ -23,6 +23,30 @@
 (*********************************************)
 (* Individual features *)
 
+(** The ASTs for locality modes *)
+module Local : sig
+  type core_type = Ltyp_local of Parsetree.core_type
+
+  type constructor_argument = Lcarg_global of Parsetree.core_type
+
+  type expression = Lexp_local of Parsetree.expression
+
+  type pattern = Lpat_local of Parsetree.pattern
+
+  val type_of :
+    loc:Location.t -> attrs:Parsetree.attributes ->
+    core_type -> Parsetree.core_type
+  val constr_arg_of :
+    loc:Location.t -> attrs:Parsetree.attributes ->
+    constructor_argument -> Parsetree.core_type
+  val expr_of :
+    loc:Location.t -> attrs:Parsetree.attributes ->
+    expression -> Parsetree.expression
+  val pat_of :
+    loc:Location.t -> attrs:Parsetree.attributes ->
+    pattern -> Parsetree.pattern
+end
+
 (** The ASTs for list and array comprehensions *)
 module Comprehensions : sig
   type iterator =
@@ -206,7 +230,8 @@ end
 
 (** Novel syntax in types *)
 module Core_type : sig
-  type t = |
+  type t =
+    | Jtyp_local of Local.core_type
 
   include AST
     with type t := t * Parsetree.attributes
@@ -216,7 +241,8 @@ end
 (** Novel syntax in constructor arguments; this isn't a core AST type,
     but captures where [global_] lives *)
 module Constructor_argument : sig
-  type t = |
+  type t =
+    | Jcarg_local of Local.constructor_argument
 
   include AST
     with type t := t * Parsetree.attributes
@@ -226,6 +252,7 @@ end
 (** Novel syntax in expressions *)
 module Expression : sig
   type t =
+    | Jexp_local           of Local.expression
     | Jexp_comprehension    of Comprehensions.expression
     | Jexp_immutable_array  of Immutable_arrays.expression
     | Jexp_unboxed_constant of Unboxed_constants.expression
@@ -241,6 +268,7 @@ end
 (** Novel syntax in patterns *)
 module Pattern : sig
   type t =
+    | Jpat_local           of Local.pattern
     | Jpat_immutable_array of Immutable_arrays.pattern
     | Jpat_unboxed_constant of Unboxed_constants.pattern
 
