@@ -350,8 +350,7 @@ and core_type1 ctxt f x =
   | Some (jtyp, attrs) -> core_type1_jane_syntax ctxt attrs f jtyp
   | None ->
   if has_non_curry_attr x.ptyp_attributes then core_type ctxt f x
-  else
-    match x.ptyp_desc with
+  else match x.ptyp_desc with
     | Ptyp_any -> pp f "_";
     | Ptyp_var s -> tyvar f  s;
     | Ptyp_tuple l ->  pp f "(%a)" (list (core_type1 ctxt) ~sep:"@;*@;") l
