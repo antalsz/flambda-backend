@@ -60,6 +60,7 @@ type error =
       {vloc : value_loc; typ : type_expr; err : Layout.Violation.t}
   | Non_sort of
       {vloc : sort_loc; typ : type_expr; err : Layout.Violation.t}
+  | Misplaced_local
 
 exception Error of Location.t * Env.t * error
 exception Error_forward of Location.error
@@ -397,19 +398,19 @@ let transl_type_param env styp layout =
     (fun () -> transl_type_param env styp layout)
 
 let get_alloc_mode styp =
-  match Builtin_attributes.has_local styp.ptyp_attributes with
-  | Ok true -> Alloc_mode.Local
-  | Ok false -> Alloc_mode.Global
-  | Error () ->
-     raise (Error(styp.ptyp_loc, Env.empty, Unsupported_extension Local))
+  match Jane_syntax.Core_type.of_ast styp with
+  | Some (Jtyp_local (Ltyp_local styp), attrs) ->
+      Alloc_mode.Local, {styp with ptyp_attributes = attrs}
+  | None -> Alloc_mode.Global, styp
 
 let rec extract_params styp =
   let final styp =
-    [], styp, get_alloc_mode styp
+    let mode, styp = get_alloc_mode styp in
+    [], styp, mode
   in
   match styp.ptyp_desc with
   | Ptyp_arrow (l, a, r) ->
-      let arg_mode = get_alloc_mode a in
+      let arg_mode, a = get_alloc_mode a in
       let params, ret, ret_mode =
         if Builtin_attributes.has_curry r.ptyp_attributes then final r
         else extract_params r
@@ -437,7 +438,7 @@ and transl_type_aux env policy mode styp =
       ctyp_loc = loc; ctyp_attributes = styp.ptyp_attributes }
   in
   match Jane_syntax.Core_type.of_ast styp with
-  | Some (etyp, attrs) -> transl_type_aux_jst env policy mode attrs etyp
+  | Some (etyp, attrs) -> transl_type_aux_jst ~loc env policy mode attrs etyp
   | None ->
   match styp.ptyp_desc with
     Ptyp_any ->
@@ -836,9 +837,12 @@ and transl_type_aux env policy mode styp =
   | Ptyp_extension ext ->
       raise (Error_forward (Builtin_attributes.error_of_extension ext))
 
-and transl_type_aux_jst _env _policy _mode _attrs
+and transl_type_aux_jst ~loc env _policy _mode _attrs
       : Jane_syntax.Core_type.t -> _ = function
-  | _ -> .
+  | Jtyp_local (Ltyp_local _) ->
+      (* Unreachable without writing Jane-syntax directly; the parser won't
+         generate this *)
+      raise (Error(loc, env, Misplaced_local))
 
 and transl_fields env policy o fields =
   let hfields = Hashtbl.create 17 in
@@ -1139,6 +1143,10 @@ let report_error env ppf = function
     fprintf ppf "@[%s types must have a representable layout.@ \ %a@]"
       s (Layout.Violation.report_with_offender
            ~offender:(fun ppf -> Printtyp.type_expr ppf typ)) err
+  | Misplaced_local ->
+      (* Unreachable without writing Jane-syntax directly; the parser won't
+         generate this *)
+      fprintf ppf "@[\"local_\" cannot occur outside of an arrow type@]"
 
 let () =
   Location.register_error_of_exn

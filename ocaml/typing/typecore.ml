@@ -475,10 +475,16 @@ let submode ~loc ~env ~reason mode expected_mode =
 let escape ~loc ~env ~reason m =
   submode ~loc ~env ~reason m mode_global
 
-let eqmode ~loc ~env m1 m2 err =
-  match Alloc_mode.equate m1 m2 with
-  | Ok () -> ()
-  | Error () -> raise (Error(loc, env, err))
+let check_eq_mode ~loc ~env m1 cm2 err =
+  match cm2 with
+  | Alloc_mode.Local -> begin
+      match Alloc_mode.equate m1 Alloc_mode.local with
+      | Ok () -> ()
+      | Error () -> raise (Error(loc, env, err))
+    end
+  | Alloc_mode.Global ->
+      (* We can always submode *)
+      ()
 
 type expected_pat_mode =
   { mode : Value_mode.t;
@@ -645,17 +651,17 @@ let extract_label_names env ty =
 let is_principal ty =
   not !Clflags.principal || get_level ty = generic_level
 
-let has_local_attr loc attrs =
-  match Builtin_attributes.has_local attrs with
-  | Ok l -> l
-  | Error () ->
-     raise(Typetexp.Error(loc, Env.empty, Unsupported_extension Local))
+let get_alloc_mode_pat ppat =
+  match Jane_syntax.Pattern.of_ast ppat with
+  | Some (Jpat_local (Lpat_local ppat), attrs) ->
+      Alloc_mode.Local, {ppat with ppat_attributes = attrs}
+  | Some _ | None -> Alloc_mode.Global, ppat
 
-let has_local_attr_pat ppat =
-  has_local_attr ppat.ppat_loc ppat.ppat_attributes
-
-let has_local_attr_exp pexp =
-  has_local_attr pexp.pexp_loc pexp.pexp_attributes
+let get_alloc_mode_exp pexp =
+  match Jane_syntax.Expression.of_ast pexp with
+  | Some (Jexp_local (Lexp_local pexp), attrs) ->
+      Alloc_mode.Local, {pexp with pexp_attributes = attrs}
+  | Some _ | None -> Alloc_mode.Global, pexp
 
 let has_poly_constraint spat =
   match spat.ppat_desc with
@@ -1979,6 +1985,8 @@ let rec has_literal_pattern p =
   | Ppat_or (p, q) ->
      has_literal_pattern p || has_literal_pattern q
 and has_literal_pattern_jane_syntax : Jane_syntax.Pattern.t -> _ = function
+  | Jpat_local (Lpat_local p) ->
+      has_literal_pattern p
   | Jpat_immutable_array (Iapat_immutable_array ps) ->
      List.exists has_literal_pattern ps
   | Jpat_unboxed_constant _ -> true
@@ -2299,6 +2307,12 @@ and type_pat_aux
          local definitions, it seems better to just put the pattern matching
          here.  This shouldn't mess up the diff *too* much. *)
       match jpat with
+      | Jpat_local (Lpat_local sp) ->
+          (* Locality is handled separately; see the uses of
+             [get_alloc_mode_pat] *)
+          type_pat_aux
+            tps category ~no_existentials ~mode ~alloc_mode ~env
+            sp expected_ty k
       | Jpat_immutable_array (Iapat_immutable_array spl) ->
           type_pat_array Immutable spl attrs
       | Jpat_unboxed_constant cst ->
@@ -2728,10 +2742,8 @@ and type_pat_aux
   | Ppat_constraint(sp', sty) ->
       assert construction_not_used_in_counterexamples;
       (* Pretend separate = true *)
-      let type_mode =
-        if has_local_attr_pat sp then Alloc_mode.Local
-        else Alloc_mode.Global
-      in
+      let type_mode, sp = get_alloc_mode_pat sp in
+      let _ = sp in (* We don't want to accidentally use the old one *)
       let cty, ty, expected_ty' =
         solve_Ppat_constraint ~refine tps loc env type_mode sty expected_ty in
       type_pat ~alloc_mode tps category sp' expected_ty' (fun p ->
@@ -2955,6 +2967,7 @@ let rec pat_tuple_arity spat =
       combine_pat_tuple_arity (pat_tuple_arity sp1) (pat_tuple_arity sp2)
   | Ppat_constraint(p, _) | Ppat_open(_, p) | Ppat_alias(p, _) -> pat_tuple_arity p
 and pat_tuple_arity_jane_syntax : Jane_syntax.Pattern.t -> _ = function
+  | Jpat_local (Lpat_local p) -> pat_tuple_arity p
   | Jpat_immutable_array (Iapat_immutable_array _) -> Not_local_tuple
   | Jpat_unboxed_constant _ -> Not_local_tuple
 
@@ -3509,17 +3522,13 @@ let is_local_returning_expr e =
     match Jane_syntax.Expression.of_ast e with
     | Some (jexp, _attrs) -> begin
         match jexp with
-        | Jexp_comprehension   _ -> false, e.pexp_loc
+        | Jexp_local (Lexp_local _) -> true, e.pexp_loc (* Yes, the outer loc *)
+        | Jexp_comprehension _ -> false, e.pexp_loc
         | Jexp_immutable_array _ -> false, e.pexp_loc
         | Jexp_unboxed_constant _ -> false, e.pexp_loc
       end
     | None      ->
     match e.pexp_desc with
-    | Pexp_apply
-        ({ pexp_desc = Pexp_extension(
-           {txt = "extension.local"|"ocaml.local"|"local"}, PStr []) },
-         [Nolabel, _]) ->
-        true, e.pexp_loc
     | Pexp_ident _ | Pexp_constant _ | Pexp_apply _ | Pexp_tuple _
     | Pexp_construct _ | Pexp_variant _ | Pexp_record _ | Pexp_field _
     | Pexp_setfield _ | Pexp_array _ | Pexp_while _ | Pexp_for _ | Pexp_send _
@@ -3591,14 +3600,14 @@ let is_local_returning_function cases =
 
 let rec approx_type env sty =
   match Jane_syntax.Core_type.of_ast sty with
-  | Some (jty, attrs) -> approx_type_jst env attrs jty
+  | Some (jty, attrs) -> approx_type_jst ~loc:sty.ptyp_loc env attrs jty
   | None ->
   match sty.ptyp_desc with
   | Ptyp_arrow (p, ({ ptyp_desc = Ptyp_poly _ } as arg_sty), sty) ->
       (* CR layouts v5: value requirement here to be relaxed *)
       if is_optional p then newvar (Layout.value ~why:Type_argument)
       else begin
-        let arg_mode = Typetexp.get_alloc_mode arg_sty in
+        let arg_mode, arg_sty = Typetexp.get_alloc_mode arg_sty in
         let arg_ty =
           (* Polymorphic types will only unify with types that match all of their
            polymorphic parts, so we need to fully translate the type here
@@ -3611,7 +3620,8 @@ let rec approx_type env sty =
         newty (Tarrow ((p,marg,mret), arg_ty.ctyp_type, ret, commu_ok))
       end
   | Ptyp_arrow (p, arg_sty, sty) ->
-      let arg_mode = Typetexp.get_alloc_mode arg_sty in
+      let arg_mode, arg_sty = Typetexp.get_alloc_mode arg_sty in
+      let _ = arg_sty in (* We don't want to accidentally use the old one *)
       let arg =
         if is_optional p
         then type_option (newvar (Layout.value ~why:Type_argument))
@@ -3637,12 +3647,18 @@ let rec approx_type env sty =
      (which mentions approx_type) for why it can't be value.  *)
   | _ -> newvar (Layout.any ~why:Dummy_layout)
 
-and approx_type_jst _env _attrs : Jane_syntax.Core_type.t -> _ = function
-  | _ -> .
+and approx_type_jst ~loc env _attrs : Jane_syntax.Core_type.t -> _ = function
+  | Jtyp_local (Ltyp_local _) ->
+      (* Unreachable without writing Jane-syntax directly; the parser won't
+         generate this *)
+      raise (Typetexp.Error(loc, env, Misplaced_local))
 
 let type_pattern_approx_jane_syntax : Jane_syntax.Pattern.t -> _ = function
-  | Jpat_immutable_array _
-  | Jpat_unboxed_constant _ -> ()
+  | Jpat_local (Lpat_local _) ->
+      (* The only check for [local_] is with [Ppat_constraint] *)
+      ()
+  | Jpat_immutable_array (Iapat_immutable_array _)
+  | Jpat_unboxed_constant (Float _ | Integer _) -> ()
 
 let type_pattern_approx env spat ty_expected =
   match Jane_syntax.Pattern.of_ast spat with
@@ -3650,10 +3666,7 @@ let type_pattern_approx env spat ty_expected =
   | None      ->
   match spat.ppat_desc with
   | Ppat_constraint(_, ({ptyp_desc=Ptyp_poly _} as sty)) ->
-      let arg_type_mode =
-        if has_local_attr_pat spat then Alloc_mode.Local
-        else Alloc_mode.Global
-      in
+      let arg_type_mode, spat = get_alloc_mode_pat spat in
       let ty_pat =
         Typetexp.transl_simple_type env ~closed:false arg_type_mode sty
       in
@@ -3663,15 +3676,15 @@ let type_pattern_approx env spat ty_expected =
   | _ -> ()
 
 let rec type_function_approx env loc label spato sexp in_function ty_expected =
-  let has_local, has_poly =
+  let spat_mode, has_poly =
     match spato with
-    | None -> false, false
+    | None -> Alloc_mode.Global, false
     | Some spat ->
-        let has_local = has_local_attr_pat spat in
+        let spat_mode, spat = get_alloc_mode_pat spat in
         let has_poly = has_poly_constraint spat in
         if has_poly && is_optional label then
           raise(Error(spat.ppat_loc, env, Optional_poly_param));
-        has_local, has_poly
+        spat_mode, has_poly
   in
   let loc_fun, ty_fun =
     match in_function with
@@ -3686,9 +3699,8 @@ let rec type_function_approx env loc label spato sexp in_function ty_expected =
       in
       raise (Error(loc_fun, env, err))
   in
-  if has_local then
-    eqmode ~loc ~env arg_mode Alloc_mode.local
-      (Param_mode_mismatch ty_expected);
+  check_eq_mode ~loc ~env arg_mode spat_mode
+    (Param_mode_mismatch ty_expected);
   if has_poly then begin
     match spato with
     | None -> ()
@@ -3699,7 +3711,8 @@ let rec type_function_approx env loc label spato sexp in_function ty_expected =
 
 and type_approx_aux env sexp in_function ty_expected =
   match Jane_syntax.Expression.of_ast sexp with
-  | Some (jexp, _attrs) -> type_approx_aux_jane_syntax jexp
+  | Some (jexp, _attrs) ->
+      type_approx_aux_jane_syntax env in_function ty_expected jexp
   | None      -> match sexp.pexp_desc with
     Pexp_let (_, _, e) -> type_approx_aux env e None ty_expected
   | Pexp_fun (l, _, p, e) ->
@@ -3735,20 +3748,18 @@ and type_approx_aux env sexp in_function ty_expected =
         raise(Error(sexp.pexp_loc, env, Expr_type_clash (trace, None, None)))
       end
   | Pexp_apply
-      ({ pexp_desc = Pexp_extension(
-         {txt = "extension.local"|"ocaml.local"|"local"}, PStr []) },
-       [Nolabel, e]) ->
-    type_approx_aux env e None ty_expected
-  | Pexp_apply
       ({ pexp_desc = Pexp_extension({txt = "extension.escape"}, PStr []) },
        [Nolabel, e]) ->
     type_approx_aux env e None ty_expected
   | _ -> ()
 
-and type_approx_aux_jane_syntax : Jane_syntax.Expression.t -> _ = function
-  | Jexp_comprehension _
-  | Jexp_immutable_array _
-  | Jexp_unboxed_constant _ -> ()
+and type_approx_aux_jane_syntax env _in_function ty_expected
+      : Jane_syntax.Expression.t -> _ = function
+  | Jexp_local (Lexp_local e) ->
+      type_approx_aux env e None ty_expected
+  | Jexp_comprehension (Cexp_list_comprehension _ | Cexp_array_comprehension _)
+  | Jexp_immutable_array (Iaexp_immutable_array _)
+  | Jexp_unboxed_constant (Float _ | Integer _) -> ()
 
 let type_approx env sexp ty =
   type_approx_aux env sexp None ty
@@ -3962,6 +3973,7 @@ let contains_variant_either ty =
   with Exit -> unmark_type ty; true
 
 let shallow_iter_ppat_jane_syntax f : Jane_syntax.Pattern.t -> _ = function
+  | Jpat_local (Lpat_local p) -> f p
   | Jpat_immutable_array (Iapat_immutable_array pats) -> List.iter f pats
   | Jpat_unboxed_constant _ -> ()
 
@@ -4113,9 +4125,12 @@ let rec is_inferred sexp =
   | Pexp_ifthenelse (_, e1, Some e2) -> is_inferred e1 && is_inferred e2
   | _ -> false
 and is_inferred_jane_syntax : Jane_syntax.Expression.t -> _ = function
-  | Jexp_comprehension _
-  | Jexp_immutable_array _
-  | Jexp_unboxed_constant _ -> false
+  | Jexp_local (Lexp_local e) ->
+      is_inferred e
+  | Jexp_comprehension (Cexp_list_comprehension _ | Cexp_array_comprehension _)
+  | Jexp_immutable_array (Iaexp_immutable_array _)
+  | Jexp_unboxed_constant (Float _ | Integer _) ->
+      false
 
 (* check if the type of %apply or %revapply matches the type expected by
    the specialized typing rule for those primitives.
@@ -4203,9 +4218,12 @@ and type_expect_
   match Jane_syntax.Expression.of_ast sexp with
   | Some (jexp, attributes) ->
       type_expect_jane_syntax
+        ~in_function
+        ~recarg
         ~loc
         ~env
         ~expected_mode
+        ~ty_expected_explained
         ~ty_expected
         ~explanation
         ~attributes
@@ -4361,6 +4379,7 @@ and type_expect_
   | Pexp_fun (l, Some default, spat, sbody) ->
       assert(is_optional l); (* default allowed only with optional argument *)
       let open Ast_helper in
+      let arg_pat_mode, spat = get_alloc_mode_pat spat in
       let default_loc = default.pexp_loc in
       (* Defaults are always global. They can be moved out of the function's
          region by Simplf.split_default_wrapper, or they could be evaluated
@@ -4399,12 +4418,11 @@ and type_expect_
           ~attrs:[Attr.mk (mknoloc "#default") (PStr [])]
           [Vb.mk spat smatch] sbody
       in
-      let has_local = has_local_attr_pat spat in
       type_function ?in_function loc sexp.pexp_attributes env
                     expected_mode ty_expected_explained
-                    l ~has_local ~has_poly:false [Exp.case pat body]
+                    l ~arg_pat_mode ~has_poly:false [Exp.case pat body]
   | Pexp_fun (l, None, spat, sbody) ->
-      let has_local = has_local_attr_pat spat in
+      let arg_pat_mode, spat = get_alloc_mode_pat spat in
       let has_poly = has_poly_constraint spat in
       if has_poly && is_optional l then
         raise(Error(spat.ppat_loc, env, Optional_poly_param));
@@ -4413,34 +4431,13 @@ and type_expect_
         raise (Typetexp.Error (loc, env,
           Unsupported_extension Polymorphic_parameters));
       type_function ?in_function loc sexp.pexp_attributes env
-                    expected_mode ty_expected_explained l ~has_local
+                    expected_mode ty_expected_explained l ~arg_pat_mode
                     ~has_poly [Ast_helper.Exp.case spat sbody]
   | Pexp_function caselist ->
       type_function ?in_function
         loc sexp.pexp_attributes env expected_mode
-        ty_expected_explained Nolabel ~has_local:false ~has_poly:false caselist
-  | Pexp_apply
-      ({ pexp_desc = Pexp_extension({txt = ("ocaml.local" | "local" | "extension.local" as txt)}, PStr []) },
-       [Nolabel, sbody]) ->
-      if txt = "extension.local" && not (Language_extension.is_enabled Local) then
-        raise (Typetexp.Error (loc, Env.empty, Unsupported_extension Local));
-
-      let mode = if mode_cross env ty_expected then
-        (* when mode crosses, we check the inner expr with the most relaxed mode *)
-        {expected_mode with mode = Value_mode.local; exact = false}
-        (* moreover, because mode crosses, expected_mode is completely useless *)
-      else begin
-        (* if mode does not cross, expected.mode must be local *)
-        submode ~loc ~env ~reason:Other Value_mode.local expected_mode;
-        (* and we require the inner expr to be exact local *)
-        {expected_mode with mode = Value_mode.local; exact = true}
-      end
-      in
-      let exp =
-        type_expect ?in_function ~recarg env mode sbody
-          ty_expected_explained
-      in
-      { exp with exp_loc = loc }
+        ty_expected_explained Nolabel
+        ~arg_pat_mode:Alloc_mode.Global ~has_poly:false caselist
   | Pexp_apply
       ({ pexp_desc = Pexp_extension({txt = "extension.escape"}, PStr []) },
        [Nolabel, sbody]) ->
@@ -5011,10 +5008,7 @@ and type_expect_
   | Pexp_constraint (sarg, sty) ->
      (* Pretend separate = true, 1% slowdown for lablgtk *)
       begin_def ();
-      let type_mode =
-        if has_local_attr_exp sexp then Alloc_mode.Local
-        else Alloc_mode.Global
-      in
+      let type_mode, sexp = get_alloc_mode_exp sexp in
       let cty = Typetexp.transl_simple_type env ~closed:false type_mode sty in
       let ty = cty.ctyp_type in
       end_def ();
@@ -5034,10 +5028,7 @@ and type_expect_
       (* Pretend separate = true, 1% slowdown for lablgtk *)
       (* Also see PR#7199 for a problem with the following:
          let separate = !Clflags.principal || Env.has_local_constraints env in*)
-      let type_mode =
-        if has_local_attr_exp sexp then Alloc_mode.Local
-        else Alloc_mode.Global
-      in
+      let type_mode, sexp = get_alloc_mode_exp sexp in
       let (arg, ty',cty,cty') =
         match sty with
         | None ->
@@ -5776,7 +5767,7 @@ and type_binding_op_ident env s =
   path, desc
 
 and type_function ?in_function loc attrs env (expected_mode : expected_mode)
-      ty_expected_explained arg_label ~has_local ~has_poly caselist =
+      ty_expected_explained arg_label ~arg_pat_mode ~has_poly caselist =
   let { ty = ty_expected; explanation } = ty_expected_explained in
   let alloc_mode = Value_mode.regional_to_global_alloc expected_mode.mode in
   let alloc_mode =
@@ -5816,9 +5807,8 @@ and type_function ?in_function loc attrs env (expected_mode : expected_mode)
       in
       raise (Error(loc_fun, env, err))
   in
-  if has_local then
-    eqmode ~loc ~env arg_mode Alloc_mode.local
-      (Param_mode_mismatch ty_expected');
+  check_eq_mode ~loc ~env arg_mode arg_pat_mode
+    (Param_mode_mismatch ty_expected');
   if separate then begin
     end_def ();
     generalize_structure ty_arg;
@@ -7009,16 +6999,16 @@ and type_let
     | None      -> match sexp.pexp_desc with
     | Pexp_fun _ | Pexp_function _ -> true
     | Pexp_constraint (e, _)
-    | Pexp_newtype (_, e)
-    | Pexp_apply
-      ({ pexp_desc = Pexp_extension(
-          {txt = "extension.local"|"ocaml.local"|"local"}, PStr []) },
-       [Nolabel, e]) -> sexp_is_fun e
+    | Pexp_newtype (_, e) -> sexp_is_fun e
     | _ -> false
   and jexp_is_fun : Jane_syntax.Expression.t -> _ = function
-    | Jexp_comprehension _
-    | Jexp_immutable_array _
-    | Jexp_unboxed_constant _ -> false
+    | Jexp_local (Lexp_local e) ->
+        sexp_is_fun e
+    | Jexp_comprehension ( Cexp_list_comprehension  _
+                         | Cexp_array_comprehension _)
+    | Jexp_immutable_array (Iaexp_immutable_array _)
+    | Jexp_unboxed_constant (Float _ | Integer _) ->
+        false
   in
   let vb_is_fun { pvb_expr = sexp; _ } = sexp_is_fun sexp in
   let entirely_functions = List.for_all vb_is_fun spat_sexp_list in
@@ -7413,8 +7403,13 @@ and type_generic_array
     exp_env = env }
 
 and type_expect_jane_syntax
-      ~loc ~env ~expected_mode ~ty_expected ~explanation ~attributes
+      ~in_function ~recarg ~loc ~env ~expected_mode ~ty_expected_explained
+      ~ty_expected ~explanation ~attributes
   : Jane_syntax.Expression.t -> _ = function
+  | Jexp_local x ->
+      type_local_expr
+        ~in_function ~recarg ~loc ~env ~expected_mode ~ty_expected_explained
+        ~ty_expected ~attributes x
   | Jexp_comprehension x ->
       type_comprehension_expr
         ~loc ~env ~expected_mode ~ty_expected ~explanation ~attributes x
@@ -7424,6 +7419,28 @@ and type_expect_jane_syntax
   | Jexp_unboxed_constant x ->
       type_unboxed_constant
         ~loc ~env ~expected_mode ~ty_expected ~explanation ~attributes x
+
+and type_local_expr
+      ~in_function ~recarg ~loc ~env ~expected_mode ~ty_expected_explained
+      ~ty_expected ~attributes:_
+  : Jane_syntax.Local.expression -> _ = function
+  | Lexp_local sbody ->
+      let mode = if mode_cross env ty_expected then
+        (* when mode crosses, we check the inner expr with the most relaxed mode *)
+        {expected_mode with mode = Value_mode.local; exact = false}
+        (* moreover, because mode crosses, expected_mode is completely useless *)
+      else begin
+        (* if mode does not cross, expected.mode must be local *)
+        submode ~loc ~env ~reason:Other Value_mode.local expected_mode;
+        (* and we require the inner expr to be exact local *)
+        {expected_mode with mode = Value_mode.local; exact = true}
+      end
+      in
+      let exp =
+        type_expect ?in_function ~recarg env mode sbody
+          ty_expected_explained
+      in
+      { exp with exp_loc = loc }
 
 (* What modes should comprehensions use?  Let us be generic over the sequence
    type we use for comprehensions, calling it [sequence] (standing for either

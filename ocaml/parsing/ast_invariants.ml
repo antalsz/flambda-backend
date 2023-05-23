@@ -78,6 +78,7 @@ let iterator =
         | Cexp_array_comprehension (_, {clauses = []; body = _}) )
       ->
         empty_comprehension loc
+    | Jexp_local _
     | Jexp_comprehension _
     | Jexp_immutable_array _
     | Jexp_unboxed_constant _

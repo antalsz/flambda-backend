@@ -64,7 +64,8 @@ val transl_type_scheme:
 val transl_type_param:
   Env.t -> Parsetree.core_type -> layout -> Typedtree.core_type
 
-val get_alloc_mode : Parsetree.core_type -> alloc_mode_const
+val get_alloc_mode
+  : Parsetree.core_type -> alloc_mode_const * Parsetree.core_type
 
 exception Already_bound
 
@@ -101,6 +102,7 @@ type error =
       {vloc : value_loc; typ : type_expr; err : Layout.Violation.t}
   | Non_sort of
       {vloc : sort_loc; typ : type_expr; err : Layout.Violation.t}
+  | Misplaced_local
 
 exception Error of Location.t * Env.t * error
 

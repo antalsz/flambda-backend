@@ -223,6 +223,14 @@ module type AST = sig
       match on [sexp.pexp_desc] *without going up an indentation level*.  This
       is important to reduce the number of merge conflicts. *)
   val of_ast : ast -> t option
+
+  (** The dual of [of_ast], only used by [Ast_mapper].  This is built up from
+      the various [FEATURE.CATEGORY_of], such as [Local.type_of], which you
+      should prefer.  This generic version allows for easier construction of
+      OCaml AST terms from Jane syntax ASTs when you don't know which Jane
+      syntax feature you have; this doesn't occur very frequently, hence the
+      limited use. *)
+  val ast_of : loc:Location.t -> t -> ast
 end
 
 (******************************************)
@@ -260,9 +268,6 @@ module Expression : sig
   include AST
     with type t := t * Parsetree.attributes
      and type ast := Parsetree.expression
-
-  val expr_of :
-    loc:Location.t -> attrs:Parsetree.attributes -> t -> Parsetree.expression
 end
 
 (** Novel syntax in patterns *)
@@ -275,9 +280,6 @@ module Pattern : sig
   include AST
     with type t := t * Parsetree.attributes
      and type ast := Parsetree.pattern
-
-  val pat_of :
-    loc:Location.t -> attrs:Parsetree.attributes -> t -> Parsetree.pattern
 end
 
 (** Novel syntax in module types *)

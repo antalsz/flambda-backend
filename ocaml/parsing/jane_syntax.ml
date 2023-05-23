@@ -517,6 +517,7 @@ module type AST = sig
   type ast
 
   val of_ast : ast -> t option
+  val ast_of : loc:Location.t -> t -> ast
 end
 
 module Core_type = struct
@@ -530,6 +531,9 @@ module Core_type = struct
     | _ -> None
 
   let of_ast = Core_type.make_of_ast ~of_ast_internal
+
+  let ast_of ~loc (jtyp, attrs) = match jtyp with
+    | Jtyp_local x -> Local.type_of ~loc ~attrs x
 end
 
 module Constructor_argument = struct
@@ -543,6 +547,9 @@ module Constructor_argument = struct
     | _ -> None
 
   let of_ast = Constructor_argument.make_of_ast ~of_ast_internal
+
+  let ast_of ~loc (jcarg, attrs) = match jcarg with
+    | Jcarg_local x -> Local.constr_arg_of ~loc ~attrs x
 end
 
 module Expression = struct
@@ -569,7 +576,7 @@ module Expression = struct
 
   let of_ast = Expression.make_of_ast ~of_ast_internal
 
-  let expr_of ~loc ~attrs = function
+  let ast_of ~loc (jexp, attrs) = match jexp with
     | Jexp_local            x -> Local.expr_of             ~loc ~attrs x
     | Jexp_comprehension    x -> Comprehensions.expr_of    ~loc ~attrs x
     | Jexp_immutable_array  x -> Immutable_arrays.expr_of  ~loc ~attrs x
@@ -596,7 +603,7 @@ module Pattern = struct
 
   let of_ast = Pattern.make_of_ast ~of_ast_internal
 
-  let pat_of ~loc ~attrs = function
+  let ast_of ~loc (jpat, attrs) = match jpat with
     | Jpat_local x -> Local.pat_of ~loc ~attrs x
     | Jpat_immutable_array x -> Immutable_arrays.pat_of ~loc ~attrs x
     | Jpat_unboxed_constant x -> Unboxed_constants.pat_of ~loc ~attrs x
@@ -613,6 +620,9 @@ module Module_type = struct
     | _ -> None
 
   let of_ast = Module_type.make_of_ast ~of_ast_internal
+
+  let ast_of ~loc (jmty, attrs) = match jmty with
+    | Jmty_strengthen x -> Strengthen.mty_of ~loc ~attrs x
 end
 
 module Signature_item = struct
@@ -626,6 +636,9 @@ module Signature_item = struct
     | _ -> None
 
   let of_ast = Signature_item.make_of_ast ~of_ast_internal
+
+  let ast_of ~loc jsig = match jsig with
+    | Jsig_include_functor x -> Include_functor.sig_item_of ~loc x
 end
 
 module Structure_item = struct
@@ -639,6 +652,9 @@ module Structure_item = struct
     | _ -> None
 
   let of_ast = Structure_item.make_of_ast ~of_ast_internal
+
+  let ast_of ~loc jstr = match jstr with
+    | Jstr_include_functor x -> Include_functor.str_item_of ~loc x
 end
 
 module Extension_constructor = struct
@@ -648,4 +664,7 @@ module Extension_constructor = struct
     | _ -> None
 
   let of_ast = Extension_constructor.make_of_ast ~of_ast_internal
+
+  let ast_of ~loc:_ (jext, _attrs) = match jext with
+    | (_ : t) -> .
 end

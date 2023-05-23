@@ -197,7 +197,7 @@ end
 module type AST_with_attributes = sig
   include AST
 
-  (** Add attributes to an AST term, appending them to the attributes already
+  (** Add attributes to an AST term, prepending them to the attributes already
       present. *)
   val add_attributes : Parsetree.attributes -> ast -> ast
 

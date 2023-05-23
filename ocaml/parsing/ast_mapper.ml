@@ -143,22 +143,23 @@ module T = struct
     in
     Of.mk ~loc ~attrs desc
 
-  let map_jst _sub : Jane_syntax.Core_type.t -> Jane_syntax.Core_type.t =
+  let map_local sub
+      : Jane_syntax.Local.core_type -> Jane_syntax.Local.core_type = function
+    | Ltyp_local typ -> Ltyp_local (sub.typ sub typ)
+
+  let map_jst sub : Jane_syntax.Core_type.t -> Jane_syntax.Core_type.t =
     function
-    | _ -> .
+    | Jtyp_local lty -> Jtyp_local (map_local sub lty)
 
   let map sub ({ptyp_desc = desc; ptyp_loc = loc; ptyp_attributes = attrs}
                  as typ) =
     let open Typ in
     let loc = sub.location sub loc in
     match Jane_syntax.Core_type.of_ast typ with
-    | Some (jtyp, attrs) -> begin
+    | Some (jtyp, attrs) ->
         let attrs = sub.attributes sub attrs in
-        let typ = match sub.typ_jane_syntax sub jtyp with
-          | _ -> .
-        in
-        { typ with ptyp_attributes = attrs @ typ.ptyp_attributes }
-    end
+        let jtyp  = sub.typ_jane_syntax sub jtyp in
+        Jane_syntax.Core_type.ast_of ~loc (jtyp, attrs)
     | None ->
     let attrs = sub.attributes sub attrs in
     match desc with
@@ -481,9 +482,13 @@ end
 module E = struct
   (* Value expressions for the core language *)
 
+  module L = Jane_syntax.Local
   module C = Jane_syntax.Comprehensions
   module IA = Jane_syntax.Immutable_arrays
   module UC = Jane_syntax.Unboxed_constants
+
+  let map_lexp sub : L.expression -> L.expression = function
+    | Lexp_local expr -> Lexp_local (sub.expr sub expr)
 
   let map_iterator sub : C.iterator -> C.iterator = function
     | Range { start; stop; direction } ->
@@ -524,6 +529,7 @@ module E = struct
 
   let map_jst sub : Jane_syntax.Expression.t -> Jane_syntax.Expression.t =
     function
+    | Jexp_local x -> Jexp_local (map_lexp sub x)
     | Jexp_comprehension x -> Jexp_comprehension (map_cexp sub x)
     | Jexp_immutable_array x -> Jexp_immutable_array (map_iaexp sub x)
     | Jexp_unboxed_constant x ->
@@ -534,11 +540,10 @@ module E = struct
     let open Exp in
     let loc = sub.location sub loc in
     match Jane_syntax.Expression.of_ast exp with
-    | Some (jexp, attrs) -> begin
+    | Some (jexp, attrs) ->
         let attrs = sub.attributes sub attrs in
-        Jane_syntax.Expression.expr_of ~loc ~attrs
-          (sub.expr_jane_syntax sub jexp)
-    end
+        let jexp = sub.expr_jane_syntax sub jexp in
+        Jane_syntax.Expression.ast_of ~loc (jexp, attrs)
     | None ->
     let attrs = sub.attributes sub attrs in
     match desc with
@@ -629,8 +634,12 @@ end
 module P = struct
   (* Patterns *)
 
+  module L = Jane_syntax.Local
   module IA = Jane_syntax.Immutable_arrays
   module UC = Jane_syntax.Unboxed_constants
+
+  let map_lpat sub : L.pattern -> L.pattern = function
+    | Lpat_local pat -> Lpat_local (sub.pat sub pat)
 
   let map_iapat sub : IA.pattern -> IA.pattern = function
     | Iapat_immutable_array elts ->
@@ -643,6 +652,7 @@ module P = struct
     | Float _ | Integer _ as x -> x
 
   let map_jst sub : Jane_syntax.Pattern.t -> Jane_syntax.Pattern.t = function
+    | Jpat_local x -> Jpat_local (map_lpat sub x)
     | Jpat_immutable_array x -> Jpat_immutable_array (map_iapat sub x)
     | Jpat_unboxed_constant x ->
         Jpat_unboxed_constant (map_unboxed_constant_pat sub x)
@@ -652,10 +662,10 @@ module P = struct
     let open Pat in
     let loc = sub.location sub loc in
     match Jane_syntax.Pattern.of_ast pat with
-    | Some (jpat, attrs) -> begin
+    | Some (jpat, attrs) ->
         let attrs = sub.attributes sub attrs in
-        Jane_syntax.Pattern.pat_of ~loc ~attrs (sub.pat_jane_syntax sub jpat)
-    end
+        let jpat = sub.pat_jane_syntax sub jpat in
+        Jane_syntax.Pattern.ast_of ~loc (jpat, attrs)
     | None ->
     let attrs = sub.attributes sub attrs in
     match desc with

@@ -548,6 +548,8 @@ module Make_with_attribute
 = struct
     include AST_syntactic_category
 
+    let add_attributes attrs ast = set_attributes ast (attrs @ attributes ast)
+
     let embedding_syntax = Embedding_syntax.Attribute
 
     let make_jane_syntax name ast =
@@ -560,14 +562,12 @@ module Make_with_attribute
         ; attr_payload = PStr []
         }
       in
-      set_attributes ast (attr :: attributes ast)
+      add_attributes [attr] ast
 
     let match_jane_syntax ast =
       match find_and_remove_jane_syntax_attribute (attributes ast) with
       | None -> None
       | Some (name, attrs) -> Some (name, set_attributes ast attrs)
-
-    let add_attributes attrs ast = set_attributes ast (attrs @ attributes ast)
 end
 
 (** For a syntactic category, produce translations into and out of

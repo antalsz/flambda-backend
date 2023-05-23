@@ -122,8 +122,8 @@ let rec add_type bv ty =
   | Ptyp_package pt -> add_package_type bv pt
   | Ptyp_extension e -> handle_extension e
 
-and add_type_jst _bv : Jane_syntax.Core_type.t -> _ = function
-  | _ -> .
+and add_type_jst bv : Jane_syntax.Core_type.t -> _ = function
+  | Jtyp_local (Ltyp_local ty) -> add_type bv ty
 
 and add_package_type bv (lid, l) =
   add bv lid;
@@ -213,6 +213,8 @@ let rec add_pattern bv pat =
   | Ppat_exception p -> add_pattern bv p
   | Ppat_extension e -> handle_extension e
 and add_pattern_jane_syntax bv : Jane_syntax.Pattern.t -> _ = function
+  | Jpat_local (Lpat_local p) ->
+      add_pattern bv p
   | Jpat_immutable_array (Iapat_immutable_array pl) ->
       List.iter (add_pattern bv) pl
   | Jpat_unboxed_constant _ -> add_constant
@@ -299,9 +301,13 @@ let rec add_expr bv exp =
   | Pexp_unreachable -> ()
 
 and add_expr_jane_syntax bv : Jane_syntax.Expression.t -> _ = function
-  | Jexp_comprehension x -> add_comprehension_expr bv x
-  | Jexp_immutable_array x -> add_immutable_array_expr bv x
+  | Jexp_local je -> add_local_expr bv je
+  | Jexp_comprehension je -> add_comprehension_expr bv je
+  | Jexp_immutable_array je -> add_immutable_array_expr bv je
   | Jexp_unboxed_constant _ -> add_constant
+
+and add_local_expr bv : Jane_syntax.Local.expression -> _ = function
+  | Lexp_local e -> add_expr bv e
 
 and add_comprehension_expr bv : Jane_syntax.Comprehensions.expression -> _ =
   function

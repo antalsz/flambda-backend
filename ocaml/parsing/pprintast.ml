@@ -123,14 +123,6 @@ let filter_curry_attrs attrs =
 let has_non_curry_attr attrs =
   List.exists (fun attr -> not (is_curry_attr attr)) attrs
 
-let check_local_attr attrs =
-  match
-    List.partition (fun attr ->
-        attr.attr_name.txt = "extension.local") attrs
-  with
-  | [], _ -> attrs, false
-  | _::_, rest -> rest, true
-
 type space_formatter = (unit, Format.formatter, unit) format
 
 let override = function
@@ -298,13 +290,8 @@ let tyvar ppf s =
 let tyvar_loc f str = tyvar f str.txt
 let string_quot f x = pp f "`%s" x
 
-let maybe_local_type pty ctxt f c =
-  let cattrs, is_local = check_local_attr c.ptyp_attributes in
-  let c = { c with ptyp_attributes = cattrs } in
-  if is_local then
-    pp f "local_ %a" (pty ctxt) c
-  else
-    pty ctxt f c
+let local_type pty ctxt f ty = pp f "local_ %a" (pty ctxt) ty
+
 (* c ['a,'b] *)
 let rec class_params_def ctxt f =  function
   | [] -> ()
@@ -314,20 +301,26 @@ let rec class_params_def ctxt f =  function
 
 and type_with_label ctxt f (label, c) =
   match label with
-  | Nolabel    -> maybe_local_type core_type1 ctxt f c (* otherwise parenthesize *)
-  | Labelled s -> pp f "%s:%a" s (maybe_local_type core_type1 ctxt) c
-  | Optional s -> pp f "?%s:%a" s (maybe_local_type core_type1 ctxt) c
+  | Nolabel    -> core_type1 ctxt f c (* otherwise parenthesize *)
+  | Labelled s -> pp f "%s:%a" s (core_type1 ctxt) c
+  | Optional s -> pp f "?%s:%a" s (core_type1 ctxt) c
 
 and core_type ctxt f x =
   match Jane_syntax.Core_type.of_ast x with
-  | Some (jtyp, attrs) -> core_type_jane_syntax ctxt attrs f jtyp
+  | Some (jtyp, attrs) ->
+      let filtered_attrs = filter_curry_attrs attrs in
+      if filtered_attrs <> [] then
+        pp f "((%a)%a)" (core_type ctxt) x (attributes ctxt) filtered_attrs
+      else
+        core_type_jane_syntax ctxt f jtyp
   | None ->
   let filtered_attrs = filter_curry_attrs x.ptyp_attributes in
   if filtered_attrs <> [] then begin
     pp f "((%a)%a)" (core_type ctxt) {x with ptyp_attributes=[]}
       (attributes ctxt) filtered_attrs
   end
-  else match x.ptyp_desc with
+  else
+    match x.ptyp_desc with
     | Ptyp_arrow (l, ct1, ct2) ->
         pp f "@[<2>%a@;->@;%a@]" (* FIXME remove parens later *)
           (type_with_label ctxt) (l,ct1) (return_type ctxt) ct2
@@ -347,7 +340,10 @@ and core_type ctxt f x =
 
 and core_type1 ctxt f x =
   match Jane_syntax.Core_type.of_ast x with
-  | Some (jtyp, attrs) -> core_type1_jane_syntax ctxt attrs f jtyp
+  | Some (jtyp, attrs) ->
+    if has_non_curry_attr attrs
+    then core_type ctxt f x
+    else core_type1_jane_syntax ctxt f jtyp
   | None ->
   if has_non_curry_attr x.ptyp_attributes then core_type ctxt f x
   else match x.ptyp_desc with
@@ -426,17 +422,16 @@ and core_type1 ctxt f x =
     | Ptyp_extension e -> extension ctxt f e
     | _ -> paren true (core_type ctxt) f x
 
-and core_type1_jane_syntax _ctxt _attrs _f : Jane_syntax.Core_type.t -> _ =
-  function
-  | _ -> .
+and core_type1_jane_syntax ctxt f : Jane_syntax.Core_type.t -> _ = function
+  | Jtyp_local (Ltyp_local _) as jty ->
+      paren true (core_type_jane_syntax ctxt) f jty
 
-and core_type_jane_syntax _ctxt _attrs _f : Jane_syntax.Core_type.t -> _ =
-  function
-  | _ -> .
+and core_type_jane_syntax ctxt f : Jane_syntax.Core_type.t -> _ = function
+  | Jtyp_local (Ltyp_local ty) -> local_type core_type ctxt f ty
 
 and return_type ctxt f x =
-  if x.ptyp_attributes <> [] then maybe_local_type core_type1 ctxt f x
-  else maybe_local_type core_type ctxt f x
+  if x.ptyp_attributes <> [] then core_type1 ctxt f x
+  else core_type ctxt f x
 
 (********************pattern********************)
 (* be cautious when use [pattern], [pattern1] is preferred *)
@@ -553,8 +548,10 @@ and simple_pattern ctxt (f:Format.formatter) (x:pattern) : unit =
         | Some (jpat, _attrs) -> begin match jpat with
         | Jpat_immutable_array (Iapat_immutable_array _) -> false
         | Jpat_unboxed_constant _ -> false
+        | Jpat_local (Lpat_local _) -> true
         end
-        | None -> match p.ppat_desc with
+        | None ->
+        match p.ppat_desc with
         | Ppat_array _ | Ppat_record _
         | Ppat_construct (({txt=Lident ("()"|"[]");_}), None) -> false
         | _ -> true in
@@ -568,47 +565,76 @@ and pattern_jane_syntax ctxt attrs f (pat : Jane_syntax.Pattern.t) =
       (attributes ctxt) attrs
   else
     match pat with
+    | Jpat_local (Lpat_local p) ->
+        pp f "(local_ %a)" (simple_pattern ctxt) p
     | Jpat_immutable_array (Iapat_immutable_array l) ->
         pp f "@[<2>[:%a:]@]"  (list (pattern1 ctxt) ~sep:";") l
     | Jpat_unboxed_constant c -> unboxed_constant ctxt f c
 
-and maybe_local_pat ctxt is_local f p =
-  if is_local then
-    pp f "(local_ %a)" (simple_pattern ctxt) p
-  else
-    pp f "%a" (simple_pattern ctxt) p
-
 and label_exp ctxt f (l,opt,p) =
-  let pattrs, is_local = check_local_attr p.ppat_attributes in
-  let p = { p with ppat_attributes = pattrs } in
+  let punnable sigil name =
+    let non_punned () = pp f "%c%s:%a" sigil name (simple_pattern ctxt) p in
+    let is_punned = function
+      | {ppat_desc = Ppat_var {txt;_}; ppat_attributes = []} -> txt = name
+      | _ -> false
+    in
+    non_punned, is_punned
+  in
   match l with
   | Nolabel ->
       (* single case pattern parens needed here *)
-      pp f "%a" (maybe_local_pat ctxt is_local) p
-  | Optional rest ->
-      begin match p with
-      | {ppat_desc = Ppat_var {txt;_}; ppat_attributes = []}
-        when txt = rest && not is_local ->
-          (match opt with
-           | Some o -> pp f "?(%s=@;%a)" rest  (expression ctxt) o
-           | None -> pp f "?%s" rest)
-      | _ ->
-          (match opt with
-           | Some o ->
-               pp f "?%s:(%s%a=@;%a)"
-                 rest
-                 (if is_local then "local_ " else "")
-                 (pattern1 ctxt) p (expression ctxt) o
-           | None -> pp f "?%s:%a" rest (maybe_local_pat ctxt is_local) p)
-      end
-  | Labelled l -> match p with
-    | {ppat_desc  = Ppat_var {txt;_}; ppat_attributes = []}
-      when txt = l ->
-        if is_local then
+      pp f "%a" (simple_pattern ctxt) p
+  | Optional rest -> begin
+      let non_punned, is_punned = punnable '?' rest in
+      let modifier ~is_local = if is_local then "local_ " else "" in
+      let non_punned ~is_local = match opt with
+        | Some o ->
+            pp f "?%s:(%s%a=@;%a)"
+              rest
+              (modifier ~is_local)
+              (pattern1 ctxt) p (expression ctxt) o
+        | None ->
+            non_punned ()
+      in
+      let punned ~is_local =
+        match opt with
+        | Some o ->
+            pp f "?(%s%s=@;%a)" (modifier ~is_local) rest (expression ctxt) o
+        | None ->
+            pp f "?%s" rest
+      in
+      match Jane_syntax.Pattern.of_ast p with
+      | Some (Jpat_local (Lpat_local lp), []) when is_punned lp ->
+          punned ~is_local:true
+      | Some
+          ( (Jpat_local _ | Jpat_immutable_array _ | Jpat_unboxed_constant _)
+          , _
+          )
+        ->
+          non_punned ~is_local:false
+      | None ->
+      if is_punned p then
+        punned ~is_local:false
+      else
+        non_punned ~is_local:false
+    end
+  | Labelled l -> begin
+      let non_punned, is_punned = punnable '~' l in
+      match Jane_syntax.Pattern.of_ast p with
+      | Some (Jpat_local (Lpat_local lp), []) when is_punned lp ->
           pp f "~(local_ %s)" l
-        else
-          pp f "~%s" l
-    | _ ->  pp f "~%s:%a" l (maybe_local_pat ctxt is_local) p
+      | Some
+          ( (Jpat_local _ | Jpat_immutable_array _ | Jpat_unboxed_constant _)
+          , _
+          )
+        ->
+          non_punned ()
+      | None ->
+      if is_punned p then
+        pp f "~%s" l
+      else
+        non_punned ()
+    end
 
 and sugar_expr ctxt f e =
   if e.pexp_attributes <> [] then false
@@ -728,10 +754,6 @@ and expression ctxt f x =
         pp f "@[<2>%a in@;<1 -2>%a@]"
           (bindings reset_ctxt) (rf,l)
           (expression ctxt) e
-    | Pexp_apply
-      ({ pexp_desc = Pexp_extension({txt = "extension.local"}, PStr []) },
-       [Nolabel, sbody]) ->
-        pp f "@[<2>local_ %a@]" (expression ctxt) sbody
     | Pexp_apply (e, l) ->
         begin if not (sugar_expr ctxt f x) then
             match view_fixity_of_exp e with
@@ -1377,9 +1399,6 @@ and payload ctxt f = function
       pp f " when "; expression ctxt f e
 
 and pp_print_pexp_function ctxt sep f x =
-  (* do not print [@extension.local] on expressions *)
-  let attrs, _ = check_local_attr x.pexp_attributes in
-  let x = { x with pexp_attributes = attrs } in
   if x.pexp_attributes <> [] then pp f "%s@;%a" sep (expression ctxt) x
   else match x.pexp_desc with
     | Pexp_fun (label, eo, p, e) ->
@@ -1460,16 +1479,18 @@ and binding ctxt f {pvb_pat=p; pvb_expr=x; _} =
 and bindings ctxt f (rf,l) =
   let binding kwd rf f x =
     let x, is_local =
-      match x.pvb_expr.pexp_desc with
-      | Pexp_apply
-        ({ pexp_desc = Pexp_extension({txt = "extension.local"}, PStr []) },
-         [Nolabel, sbody]) ->
-         let sattrs, _ = check_local_attr sbody.pexp_attributes in
-         let sbody = {sbody with pexp_attributes = sattrs} in
-         let pattrs, _ = check_local_attr x.pvb_pat.ppat_attributes in
-         let pat = {x.pvb_pat with ppat_attributes = pattrs} in
-         {x with pvb_pat = pat; pvb_expr = sbody}, "local_ "
-      | _ -> x, ""
+      match Jane_syntax.Expression.of_ast x.pvb_expr with
+      | Some (Jexp_local (Lexp_local expr), attrs) ->
+          let pat, pat_attrs = match Jane_syntax.Pattern.of_ast x.pvb_pat with
+            | Some (Jpat_local (Lpat_local lpat), pat_attrs) -> lpat, pat_attrs
+            | Some _ | None -> x.pvb_pat, x.pvb_attributes
+          in
+          let x = {x with pvb_pat = pat;
+                          pvb_attributes = pat_attrs;
+                          pvb_expr = { expr with pexp_attributes = attrs } }
+          in
+          x, "local_ "
+      | Some _ | None -> x, ""
     in
     pp f "@[<2>%s %a%s%a@]%a" kwd rec_flag rf is_local
       (binding ctxt) x (item_attributes ctxt) x.pvb_attributes
@@ -1669,24 +1690,18 @@ and type_def_list ctxt f (rf, exported, l) =
                  (list ~sep:"@," (type_decl "and" Recursive)) xs
 
 and record_declaration ctxt f lbls =
-  let has_attr pld name =
-    List.exists (fun attr -> attr.attr_name.txt = name) pld.pld_attributes
-  in
-  let field_flag f pld =
-    pp f "%a" mutable_flag pld.pld_mutable;
-    if has_attr pld "extension.global" then pp f "global_ "
+  let pld_mode_type_attrs pld =
+    match Jane_syntax.Constructor_argument.of_ast pld.pld_type with
+    | Some (Jcarg_local (Lcarg_global carg), attrs) -> "global_ ", carg, attrs
+    | None -> "", pld.pld_type, pld.pld_attributes
   in
   let type_record_field f pld =
-    let pld_attributes =
-      List.filter (fun attr ->
-        match attr.attr_name.txt with
-        | "extension.global" -> false
-        | _ -> true) pld.pld_attributes
-    in
-    pp f "@[<2>%a%s:@;%a@;%a@]"
-      field_flag pld
+    let mode_flag, pld_type, pld_attributes = pld_mode_type_attrs pld in
+    pp f "@[<2>%a%s%s:@;%a@;%a@]"
+      mutable_flag pld.pld_mutable
+      mode_flag
       pld.pld_name.txt
-      (core_type ctxt) pld.pld_type
+      (core_type ctxt) pld_type
       (attributes ctxt) pld_attributes
   in
   pp f "{@\n%a}"
@@ -1846,9 +1861,15 @@ and jane_syntax_expr ctxt attrs f (jexp : Jane_syntax.Expression.t) =
     pp f "((%a)@,%a)" (jane_syntax_expr ctxt []) jexp
       (attributes ctxt) attrs
   else match jexp with
+  | Jexp_local x            -> local_expr ctxt f x
   | Jexp_comprehension x    -> comprehension_expr ctxt f x
   | Jexp_immutable_array x  -> immutable_array_expr ctxt f x
   | Jexp_unboxed_constant x -> unboxed_constant ctxt f x
+
+and local_expr ctxt f (lexp : Jane_syntax.Local.expression) =
+  match lexp with
+  | Lexp_local expr ->
+    pp f "@[<2>local_ %a@]" (expression ctxt) expr
 
 and comprehension_expr ctxt f (cexp : Jane_syntax.Comprehensions.expression) =
   let punct, comp = match cexp with

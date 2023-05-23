@@ -116,8 +116,11 @@ module T = struct
     | Otag (_, t) -> sub.typ sub t
     | Oinherit t -> sub.typ sub t
 
-  let iter_jst _sub : Jane_syntax.Core_type.t -> _ = function
-    | _ -> .
+  let iter_local sub : Jane_syntax.Local.core_type -> _ = function
+    | Ltyp_local ty -> sub.typ sub ty
+
+  let iter_jst sub : Jane_syntax.Core_type.t -> _ = function
+    | Jtyp_local lty -> iter_local sub lty
 
   let iter sub ({ptyp_desc = desc; ptyp_loc = loc; ptyp_attributes = attrs}
                   as typ) =
@@ -406,8 +409,12 @@ let iter_constant = ()
 module E = struct
   (* Value expressions for the core language *)
 
+  module L = Jane_syntax.Local
   module C = Jane_syntax.Comprehensions
   module IA = Jane_syntax.Immutable_arrays
+
+  let iter_local_exp sub : L.expression -> _ = function
+    | Lexp_local expr -> sub.expr sub expr
 
   let iter_iterator sub : C.iterator -> _ = function
     | Range { start; stop; direction = _ } ->
@@ -440,6 +447,7 @@ module E = struct
       List.iter (sub.expr sub) elts
 
   let iter_jst sub : Jane_syntax.Expression.t -> _ = function
+    | Jexp_local local_exp -> iter_local_exp sub local_exp
     | Jexp_comprehension comp_exp -> iter_comp_exp sub comp_exp
     | Jexp_immutable_array iarr_exp -> iter_iarr_exp sub iarr_exp
     | Jexp_unboxed_constant _ -> iter_constant
@@ -537,13 +545,18 @@ end
 module P = struct
   (* Patterns *)
 
+  module L = Jane_syntax.Local
   module IA = Jane_syntax.Immutable_arrays
+
+  let iter_lpat sub : L.pattern -> _ = function
+    | Lpat_local pat -> sub.pat sub pat
 
   let iter_iapat sub : IA.pattern -> _ = function
     | Iapat_immutable_array elts ->
       List.iter (sub.pat sub) elts
 
   let iter_jst sub : Jane_syntax.Pattern.t -> _ = function
+    | Jpat_local lpat -> iter_lpat sub lpat
     | Jpat_immutable_array iapat -> iter_iapat sub iapat
     | Jpat_unboxed_constant _ -> iter_constant
 
