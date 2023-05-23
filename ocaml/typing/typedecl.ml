@@ -79,6 +79,7 @@ type error =
   | Nonrec_gadt
   | Invalid_private_row_declaration of type_expr
   | Local_not_enabled
+  | Mutable_and_global
   | Layout_not_enabled of Layout.const
 
 open Typedtree
@@ -370,16 +371,12 @@ let make_params env path params =
     List.map make_param params
 
 
-let transl_global_flags loc attrs =
-  let transl_global_flag loc (r : (bool,unit) result) =
-    match r with
-    | Ok b -> b
-    | Error () -> raise(Error(loc, Local_not_enabled))
-  in
-  let global = transl_global_flag loc (Builtin_attributes.has_global attrs) in
-  match global with
-  | true -> Types.Global
-  | false -> Types.Unrestricted
+let transl_global_flags arg =
+  match Jane_syntax.Constructor_argument.of_ast arg with
+  | Some (Jcarg_local larg, attrs) -> begin match larg with
+    | Lcarg_global arg -> Types.Global, {arg with ptyp_attributes = attrs}
+  end
+  | None -> Types.Unrestricted, arg
 
 let transl_labels env univars closed lbls =
   assert (lbls <> []);
@@ -394,13 +391,18 @@ let transl_labels env univars closed lbls =
           pld_attributes=attrs} =
     Builtin_attributes.warning_scope attrs
       (fun () ->
+         let gbl, arg = transl_global_flags arg in
+         let gbl = match mut, gbl with
+           | Mutable, Unrestricted -> Types.Global
+           | Mutable, Global ->
+               (* Unreachable without writing Jane-syntax directly; the parser
+                  won't let you write this.  Technically [Global] would be fine
+                  here, but you can't get it so we outlaw it. *)
+               raise(Error(loc, Mutable_and_global))
+           | Immutable, _ -> gbl
+         in
          let arg = Ast_helper.Typ.force_poly arg in
          let cty = transl_simple_type env ?univars ~closed Global arg in
-         let gbl =
-           match mut with
-           | Mutable -> Types.Global
-           | Immutable -> transl_global_flags loc attrs
-         in
          {ld_id = Ident.create_local name.txt;
           ld_name = name; ld_mutable = mut; ld_global = gbl;
           ld_type = cty; ld_loc = loc; ld_attributes = attrs}
@@ -428,8 +430,8 @@ let transl_labels env univars closed lbls =
 
 let transl_types_gf env univars closed tyl =
   let mk arg =
+    let gf, arg = transl_global_flags arg in
     let cty = transl_simple_type env ?univars ~closed Global arg in
-    let gf = transl_global_flags arg.ptyp_loc arg.ptyp_attributes in
     (cty, gf)
   in
   let tyl_gfl = List.map mk tyl in
@@ -2590,6 +2592,9 @@ let report_error ppf = function
   | Local_not_enabled ->
       fprintf ppf "@[The local extension is disabled@ \
                    To enable it, pass the '-extension local' flag@]"
+  | Mutable_and_global ->
+      fprintf ppf "@[A type cannot be both mutable and@ \
+                   explicitly marked \"global_\"@]"
   | Layout_not_enabled c ->
       fprintf ppf
         "@[Layout %s is used here, but the appropriate layouts extension is \
