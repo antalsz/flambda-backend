@@ -426,6 +426,11 @@ let check_arg_type styp =
     | _ -> ()
   end
 
+type ptyp_class_meaning =
+  | Class_type
+  | Unboxed_type
+  | Deprecated_polymorphic_variant
+
 let rec transl_type env policy mode styp =
   Builtin_attributes.warning_scope styp.ptyp_attributes
     (fun () -> transl_type_aux env policy mode styp)
@@ -562,9 +567,9 @@ and transl_type_aux env policy mode styp =
       let ty, fields = transl_fields env policy o fields in
       ctyp (Ttyp_object (fields, o)) (newobj ty)
   | Ptyp_class(lid, stl) ->
-      let (path, decl, _is_variant) =
+      let (path, decl, meaning) =
+        let path, decl = Env.lookup_type ~loc:lid.loc lid.txt env in
         try
-          let path, decl = Env.find_type_by_name lid.txt env in
           let rec check decl =
             match decl.type_manifest with
               None -> raise Not_found
@@ -577,8 +582,7 @@ and transl_type_aux env policy mode styp =
           in check decl;
           Location.deprecated styp.ptyp_loc
             "old syntax for polymorphic variant type";
-          ignore(Env.lookup_type ~loc:lid.loc lid.txt env);
-          (path, decl,true)
+          (path, decl, Deprecated_polymorphic_variant)
         with Not_found -> try
           let lid2 =
             match lid.txt with
@@ -587,53 +591,59 @@ and transl_type_aux env policy mode styp =
             | Longident.Lapply(_, _) -> fatal_error "Typetexp.transl_type"
           in
           let path, decl = Env.find_type_by_name lid2 env in
-          ignore(Env.lookup_cltype ~loc:lid.loc lid.txt env);
-          (path, decl, false)
+          ignore(Env.lookup_cltype ~use:false ~loc:lid.loc lid.txt env);
+          (path, decl, Class_type)
         with Not_found ->
-          ignore (Env.lookup_cltype ~loc:lid.loc lid.txt env); assert false
+          (path, decl, Unboxed_type)
       in
-      if List.length stl <> decl.type_arity then
-        raise(Error(styp.ptyp_loc, env,
-                    Type_arity_mismatch(lid.txt, decl.type_arity,
-                                        List.length stl)));
-      let args = List.map (transl_type env policy Alloc_mode.Global) stl in
-      let params = instance_list decl.type_params in
-      List.iter2
-        (fun (sty, cty) ty' ->
-           try unify_var env ty' cty.ctyp_type with Unify err ->
-             let err = Errortrace.swap_unification_error err in
-             raise (Error(sty.ptyp_loc, env, Type_mismatch err))
-        )
-        (List.combine stl args) params;
-        let ty_args = List.map (fun ctyp -> ctyp.ctyp_type) args in
-      let ty = Ctype.expand_head env (newconstr path ty_args) in
-      let ty = match get_desc ty with
-        Tvariant row ->
-          let fields =
-            List.map
-              (fun (l,f) -> l,
-                match row_field_repr f with
-                | Rpresent oty -> rf_either_of oty
-                | _ -> f)
-              (row_fields row)
+      begin match meaning with
+      | Unboxed_type ->
+          (* XXX ASZ: This needs to not simply be skipped *)
+          transl_type_aux env policy mode (Ast_helper.Typ.constr lid stl)
+      | Class_type | Deprecated_polymorphic_variant ->
+          if List.length stl <> decl.type_arity then
+            raise(Error(styp.ptyp_loc, env,
+                        Type_arity_mismatch(lid.txt, decl.type_arity,
+                                            List.length stl)));
+          let args = List.map (transl_type env policy Alloc_mode.Global) stl in
+          let params = instance_list decl.type_params in
+          List.iter2
+            (fun (sty, cty) ty' ->
+               try unify_var env ty' cty.ctyp_type with Unify err ->
+                 let err = Errortrace.swap_unification_error err in
+                 raise (Error(sty.ptyp_loc, env, Type_mismatch err))
+            )
+            (List.combine stl args) params;
+            let ty_args = List.map (fun ctyp -> ctyp.ctyp_type) args in
+          let ty = Ctype.expand_head env (newconstr path ty_args) in
+          let ty = match get_desc ty with
+            Tvariant row ->
+              let fields =
+                List.map
+                  (fun (l,f) -> l,
+                    match row_field_repr f with
+                    | Rpresent oty -> rf_either_of oty
+                    | _ -> f)
+                  (row_fields row)
+              in
+              (* NB: row is always non-static here; more is thus never Tnil *)
+              let more =
+                TyVarEnv.new_var (Layout.value ~why:Row_variable) policy
+              in
+              let row =
+                create_row ~fields ~more
+                  ~closed:true ~fixed:None ~name:(Some (path, ty_args))
+              in
+              newty (Tvariant row)
+          | Tobject (fi, _) ->
+              let _, tv = flatten_fields fi in
+              TyVarEnv.add_pre_univar tv policy;
+              ty
+          | _ ->
+              assert false
           in
-          (* NB: row is always non-static here; more is thus never Tnil *)
-          let more =
-            TyVarEnv.new_var (Layout.value ~why:Row_variable) policy
-          in
-          let row =
-            create_row ~fields ~more
-              ~closed:true ~fixed:None ~name:(Some (path, ty_args))
-          in
-          newty (Tvariant row)
-      | Tobject (fi, _) ->
-          let _, tv = flatten_fields fi in
-          TyVarEnv.add_pre_univar tv policy;
-          ty
-      | _ ->
-          assert false
-      in
-      ctyp (Ttyp_class (path, lid, args)) ty
+          ctyp (Ttyp_class (path, lid, args)) ty
+      end
   | Ptyp_alias(st, alias) ->
       let cty =
         try

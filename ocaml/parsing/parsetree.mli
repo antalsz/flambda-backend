@@ -120,6 +120,8 @@ and core_type_desc =
             - [#tconstr]               when [l=[]],
             - [T #tconstr]             when [l=[T]],
             - [(T1, ..., Tn) #tconstr] when [l=[T1 ; ... ; Tn]].
+          (The following is Jane Street specific; delete when upstreaming.)
+          This syntax is also used for unboxed types (not just class types).
          *)
   | Ptyp_alias of core_type * string  (** [T as 'a]. *)
   | Ptyp_variant of row_field list * closed_flag * label list option
