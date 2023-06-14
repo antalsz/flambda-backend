@@ -161,8 +161,24 @@ module Universe : sig
   val check : 'a t -> unit
   val check_maximal : unit -> unit
 
+  (** Partial order:
+  {v
+               Any
+              /   \
+             /     \
+            /       \
+           /         \
+    Only_stable    Only_erasable
+           \         /
+            \       /
+             \     /
+              \   /
+          No_extensions
+  v}
+  *)
   type t =
     | No_extensions
+    | Only_stable
     | Only_erasable
     | Any
 
@@ -171,12 +187,14 @@ end = struct
   (** Which extensions can be enabled? *)
   type t =
     | No_extensions
+    | Only_stable
     | Only_erasable
     | Any
 
   let compare t1 t2 =
     let rank = function
-      | No_extensions -> 1
+      | No_extensions -> 0
+      | Stable -> 1
       | Only_erasable -> 2
       | Any -> 3
     in
@@ -186,18 +204,20 @@ end = struct
 
   let compiler_options = function
     | No_extensions -> "flag -disable-all-extensions"
+    | Only_stable   -> "flag -only-stable-extensions"
     | Only_erasable -> "flag -only-erasable-extensions"
     | Any           -> "default options"
 
   let is_allowed ext = match !universe with
     | No_extensions -> false
+    | Only_stable   -> is_stable ext
     | Only_erasable -> is_erasable ext
     | Any           -> true
 
   (* are _all_ extensions allowed? *)
   let all_allowed () = match !universe with
     | Any -> true
-    | No_extensions | Only_erasable -> false
+    | No_extensions | Only_stable | Only_erasable -> false
 
   (* The terminating [()] argument helps protect against ignored arguments. See
      the documentation for [Base.failwithf]. *)
