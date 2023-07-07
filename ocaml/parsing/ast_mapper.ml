@@ -90,6 +90,8 @@ type mapper = {
   structure_item_jane_syntax: mapper ->
     Jane_syntax.Structure_item.t -> Jane_syntax.Structure_item.t;
   typ_jane_syntax: mapper -> Jane_syntax.Core_type.t -> Jane_syntax.Core_type.t;
+  constructor_argument_jane_syntax: mapper ->
+    Jane_syntax.Constructor_argument.t -> Jane_syntax.Constructor_argument.t
 
 }
 
@@ -112,6 +114,21 @@ module C = struct
     | Pconst_string (s, loc, quotation_delimiter) ->
         let loc = sub.location sub loc in
         Const.string ~loc ?quotation_delimiter s
+end
+
+module CA_jst = struct
+  (* Constructor arguments -- Jane syntax specific *)
+
+  let map_local sub
+    : Jane_syntax.Local.constructor_argument ->
+      Jane_syntax.Local.constructor_argument =
+    function
+    | Lcarg_global typ -> Lcarg_global (sub.typ sub typ)
+
+  let map sub
+    : Jane_syntax.Constructor_argument.t -> Jane_syntax.Constructor_argument.t =
+    function
+    | Jcarg_local lcarg -> Jcarg_local (map_local sub lcarg)
 end
 
 module T = struct
@@ -209,8 +226,19 @@ module T = struct
     | Ptype_record l -> Ptype_record (List.map (sub.label_declaration sub) l)
     | Ptype_open -> Ptype_open
 
+  let map_constructor_argument sub carg =
+    match Jane_syntax.Constructor_argument.of_ast carg with
+    | Some (jcarg, attrs) ->
+        let loc = sub.location sub carg.ptyp_loc in
+        let attrs = sub.attributes sub attrs in
+        let jcarg = sub.constructor_argument_jane_syntax sub jcarg in
+        Jane_syntax.Constructor_argument.ast_of ~loc (jcarg, attrs)
+    | None ->
+        sub.typ sub carg
+
   let map_constructor_arguments sub = function
-    | Pcstr_tuple l -> Pcstr_tuple (List.map (sub.typ sub) l)
+    | Pcstr_tuple l ->
+        Pcstr_tuple (List.map (map_constructor_argument sub) l)
     | Pcstr_record l ->
         Pcstr_record (List.map (sub.label_declaration sub) l)
 
@@ -903,7 +931,7 @@ let default_mapper =
       (fun this {pld_name; pld_type; pld_loc; pld_mutable; pld_attributes} ->
          Type.field
            (map_loc this pld_name)
-           (this.typ this pld_type)
+           (T.map_constructor_argument this pld_type)
            ~mut:pld_mutable
            ~loc:(this.location this pld_loc)
            ~attrs:(this.attributes this pld_attributes)
@@ -947,6 +975,7 @@ let default_mapper =
     signature_item_jane_syntax = MT.map_signature_item_jst;
     structure_item_jane_syntax = M.map_structure_item_jst;
     typ_jane_syntax = T.map_jst;
+    constructor_argument_jane_syntax = CA_jst.map;
 
   }
 

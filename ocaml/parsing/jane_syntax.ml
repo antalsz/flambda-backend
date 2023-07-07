@@ -96,7 +96,7 @@ module Local = struct
 
   let constr_arg_of ~loc ~attrs lcarg =
     (* See Note [Wrapping with make_entire_jane_syntax] *)
-    Core_type.make_entire_jane_syntax ~loc feature (fun () ->
+    Constructor_argument.make_entire_jane_syntax ~loc feature (fun () ->
       match lcarg with
       | Lcarg_global carg ->
           Constructor_argument.add_attributes attrs @@

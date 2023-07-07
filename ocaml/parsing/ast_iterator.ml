@@ -68,6 +68,8 @@ type iterator = {
   structure_item_jane_syntax: iterator -> Jane_syntax.Structure_item.t -> unit;
   typ: iterator -> core_type -> unit;
   typ_jane_syntax: iterator -> Jane_syntax.Core_type.t -> unit;
+  constructor_argument_jane_syntax: iterator ->
+    Jane_syntax.Constructor_argument.t -> unit;
   row_field: iterator -> row_field -> unit;
   object_field: iterator -> object_field -> unit;
   type_declaration: iterator -> type_declaration -> unit;
@@ -90,6 +92,16 @@ let iter_tuple3 f1 f2 f3 (x, y, z) = f1 x; f2 y; f3 z
 let iter_opt f = function None -> () | Some x -> f x
 
 let iter_loc sub {loc; txt = _} = sub.location sub loc
+
+module CA_jst = struct
+  (* Constructor arguments -- Jane syntax specific *)
+
+  let iter_local sub : Jane_syntax.Local.constructor_argument -> _ = function
+    | Lcarg_global typ -> sub.typ sub typ
+
+  let iter sub : Jane_syntax.Constructor_argument.t -> _ = function
+    | Jcarg_local lcarg -> iter_local sub lcarg
+end
 
 module T = struct
   (* Type expressions for the core language *)
@@ -176,8 +188,17 @@ module T = struct
     | Ptype_record l -> List.iter (sub.label_declaration sub) l
     | Ptype_open -> ()
 
+  let iter_constructor_argument sub carg =
+    match Jane_syntax.Constructor_argument.of_ast carg with
+    | Some (jcarg, attrs) ->
+        sub.location sub carg.ptyp_loc;
+        sub.attributes sub attrs;
+        sub.constructor_argument_jane_syntax sub jcarg
+    | None ->
+        sub.typ sub carg
+
   let iter_constructor_arguments sub = function
-    | Pcstr_tuple l -> List.iter (sub.typ sub) l
+    | Pcstr_tuple l -> List.iter (iter_constructor_argument sub) l
     | Pcstr_record l ->
         List.iter (sub.label_declaration sub) l
 
@@ -690,6 +711,7 @@ let default_iterator =
     type_kind = T.iter_type_kind;
     typ = T.iter;
     typ_jane_syntax = T.iter_jst;
+    constructor_argument_jane_syntax = CA_jst.iter;
     row_field = T.row_field;
     object_field = T.object_field;
     type_extension = T.iter_type_extension;
@@ -794,7 +816,7 @@ let default_iterator =
     label_declaration =
       (fun this {pld_name; pld_type; pld_loc; pld_mutable = _; pld_attributes}->
          iter_loc this pld_name;
-         this.typ this pld_type;
+         T.iter_constructor_argument this pld_type;
          this.location this pld_loc;
          this.attributes this pld_attributes
       );
