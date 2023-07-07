@@ -103,23 +103,19 @@ module Local = struct
           Constructor_argument.make_jane_syntax feature ["global"] carg)
 
   let of_constr_arg carg =
-    let ecarg =
-      match find_and_remove_jane_syntax_attribute carg.ptyp_attributes with
-      | Some (embedded_name, attrs) -> begin
-          let carg = Constructor_argument.add_attributes attrs carg in
-          match Embedded_name.components embedded_name with
-          | locals :: subparts when String.equal locals extension_string ->
-            begin
-              match subparts with
-              | ["global"] -> Lcarg_global carg
-              | _ -> Desugaring_error.raise carg (Bad_mode_embedding subparts)
-            end
-          | _ -> Desugaring_error.raise carg (Non_mode_embedding embedded_name)
-        end
-      | None ->
-        Desugaring_error.raise carg Non_embedding
-    in
-    ecarg, carg.ptyp_attributes
+    match find_and_remove_jane_syntax_attribute carg.ptyp_attributes with
+    | Some (embedded_name, attrs) -> begin
+        match Embedded_name.components embedded_name with
+        | locals :: subparts when String.equal locals extension_string ->
+          begin
+            match subparts with
+            | ["global"] -> Lcarg_global carg, attrs
+            | _ -> Desugaring_error.raise carg (Bad_mode_embedding subparts)
+          end
+        | _ -> Desugaring_error.raise carg (Non_mode_embedding embedded_name)
+      end
+    | None ->
+      Desugaring_error.raise carg Non_embedding
 
   let expr_of ~loc ~attrs = function
     | Lexp_local expr ->
