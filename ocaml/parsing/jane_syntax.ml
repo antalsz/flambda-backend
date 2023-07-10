@@ -90,17 +90,37 @@ module Local = struct
     | Ltyp_local typ ->
       (* See Note [Wrapping with make_entire_jane_syntax] *)
       Core_type.make_entire_jane_syntax ~loc feature (fun () ->
-        Core_type.add_attributes attrs typ)
+        Core_type.add_attributes attrs @@
+        (* Although there's only one constructor here, the use of
+           [constructor_argument] means we need to be able to tell the two uses
+           apart *)
+        Core_type.make_jane_syntax feature ["type"; "local"] typ)
 
-  let of_type typ = Ltyp_local typ, typ.ptyp_attributes
+  let of_type typ =
+    match find_and_remove_jane_syntax_attribute typ.ptyp_attributes with
+    | Some (embedded_name, attrs) -> begin
+        match Embedded_name.components embedded_name with
+        | locals :: subparts when String.equal locals extension_string ->
+          begin
+            match subparts with
+            | ["type"; "local"] -> Ltyp_local typ, attrs
+            | _ -> Desugaring_error.raise typ (Bad_mode_embedding subparts)
+          end
+        | _ -> Desugaring_error.raise typ (Non_mode_embedding embedded_name)
+      end
+    | None ->
+      Desugaring_error.raise typ Non_embedding
 
   let constr_arg_of ~loc ~attrs lcarg =
     (* See Note [Wrapping with make_entire_jane_syntax] *)
     Constructor_argument.make_entire_jane_syntax ~loc feature (fun () ->
       match lcarg with
       | Lcarg_global carg ->
+        (* Although there's only one constructor here, the use of [core_type]
+           means we need to be able to tell the two uses apart *)
           Constructor_argument.add_attributes attrs @@
-          Constructor_argument.make_jane_syntax feature ["global"] carg)
+          Constructor_argument.make_jane_syntax
+            feature ["constructor_argument"; "global"] carg)
 
   let of_constr_arg carg =
     match find_and_remove_jane_syntax_attribute carg.ptyp_attributes with
@@ -109,7 +129,7 @@ module Local = struct
         | locals :: subparts when String.equal locals extension_string ->
           begin
             match subparts with
-            | ["global"] -> Lcarg_global carg, attrs
+            | ["constructor_argument"; "global"] -> Lcarg_global carg, attrs
             | _ -> Desugaring_error.raise carg (Bad_mode_embedding subparts)
           end
         | _ -> Desugaring_error.raise carg (Non_mode_embedding embedded_name)
