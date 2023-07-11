@@ -103,7 +103,8 @@ module Local = struct
         | locals :: subparts when String.equal locals extension_string ->
           begin
             match subparts with
-            | ["type"; "local"] -> Ltyp_local typ, attrs
+            | ["type"; "local"] ->
+              Ltyp_local (Core_type.set_attributes typ attrs), []
             | _ -> Desugaring_error.raise typ (Bad_mode_embedding subparts)
           end
         | _ -> Desugaring_error.raise typ (Non_mode_embedding embedded_name)
@@ -129,7 +130,8 @@ module Local = struct
         | locals :: subparts when String.equal locals extension_string ->
           begin
             match subparts with
-            | ["constructor_argument"; "global"] -> Lcarg_global carg, attrs
+            | ["constructor_argument"; "global"] ->
+              Lcarg_global (Constructor_argument.set_attributes carg attrs), []
             | _ -> Desugaring_error.raise carg (Bad_mode_embedding subparts)
           end
         | _ -> Desugaring_error.raise carg (Non_mode_embedding embedded_name)
