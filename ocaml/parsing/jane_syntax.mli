@@ -29,7 +29,19 @@ module Local : sig
 
   type constructor_argument = Lcarg_global of Parsetree.core_type
 
-  type expression = Lexp_local of Parsetree.expression
+  type expression =
+    | Lexp_local of Parsetree.expression
+    | Lexp_constrain_local of Parsetree.expression
+      (** This represents the shadow `local_` that is inserted on the RHS of a
+          `let local_ f : t = e in ...` binding.
+
+          Invariant: [Lexp_constrain_local] occurs on the LHS of a
+          [Pexp_constraint] or [Pexp_coerce] node.
+
+          We don't inline the definition of [Pexp_constraint] or [Pexp_coerce]
+          here because nroberts's (@ncik-roberts's) forthcoming syntactic
+          function arity parsing patch handles this case more directly, and we
+          don't want to double the amount of work we're doing.. *)
 
   type pattern = Lpat_local of Parsetree.pattern
 

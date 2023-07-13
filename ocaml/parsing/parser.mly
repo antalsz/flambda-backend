@@ -153,6 +153,7 @@ module Local_syntax_category = struct
     | Type : core_type t
     | Expression : expression t
     | Pattern : pattern t
+    | Synthesized_constraint : expression t
 end
 
 let local_if : type ast. ast Local_syntax_category.t -> _ -> _ -> ast -> ast =
@@ -162,6 +163,8 @@ let local_if : type ast. ast Local_syntax_category.t -> _ -> _ -> ast -> ast =
       | Type       -> Jane_syntax.Local.type_of (Ltyp_local x)
       | Expression -> Jane_syntax.Local.expr_of (Lexp_local x)
       | Pattern    -> Jane_syntax.Local.pat_of  (Lpat_local x)
+      | Synthesized_constraint ->
+        Jane_syntax.Local.expr_of (Lexp_constrain_local x)
     in
     make ~loc:(make_loc sloc) ~attrs:[]
   else
@@ -2882,7 +2885,10 @@ let_binding_body_no_punning:
             (ghpat ~loc:patloc (Ppat_constraint(v, typ)))
         in
         let exp =
-          local_if Expression $1 $sloc (mkexp_constraint ~loc:$sloc $5 $3)
+          mkexp_constraint
+            ~loc:$sloc
+            (local_if Synthesized_constraint $1 $sloc $5)
+            $3
         in
         (pat, exp) }
   | optional_local let_ident COLON poly(core_type) EQUAL seq_expr
@@ -2989,8 +2995,11 @@ local_fun_binding:
     local_strict_binding
       { $1 }
   | type_constraint EQUAL seq_expr
-      { Jane_syntax.Local.expr_of ~loc:(make_loc $sloc) ~attrs:[]
-          (Lexp_local (mkexp_constraint ~loc:$sloc $3 $1))  }
+      { mkexp_constraint
+          ~loc:$sloc
+          (Jane_syntax.Local.expr_of ~loc:(make_loc $sloc) ~attrs:[]
+             (Lexp_constrain_local $3))
+          $1 }
 ;
 local_strict_binding:
     EQUAL seq_expr

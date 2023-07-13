@@ -436,6 +436,7 @@ module E = struct
 
   let iter_local_exp sub : L.expression -> _ = function
     | Lexp_local expr -> sub.expr sub expr
+    | Lexp_constrain_local expr -> sub.expr sub expr
 
   let iter_iterator sub : C.iterator -> _ = function
     | Range { start; stop; direction = _ } ->

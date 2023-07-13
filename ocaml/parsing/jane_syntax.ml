@@ -49,7 +49,11 @@ module Local = struct
 
   type nonrec core_type = Ltyp_local of core_type
 
-  type nonrec expression = Lexp_local of expression
+  type nonrec expression =
+    | Lexp_local of expression
+    | Lexp_constrain_local of expression
+      (* Invariant: [Lexp_constrain_local] wraps a [Pexp_constraint] node.  For
+         more, see the [.mli] file. *)
 
   type nonrec pattern = Lpat_local of pattern
 
@@ -87,9 +91,20 @@ module Local = struct
     | Lexp_local expr ->
       (* See Note [Wrapping with make_entire_jane_syntax] *)
       Expression.make_entire_jane_syntax ~loc feature (fun () ->
+        (* Delete this [make_jane_syntax] when you delete the
+           [Lexp_constrain_local] constructor *)
+        Expression.make_jane_syntax feature ["local"] @@
+        Expression.add_attributes attrs expr)
+    | Lexp_constrain_local expr ->
+      Expression.make_entire_jane_syntax ~loc feature (fun () ->
+        Expression.make_jane_syntax feature ["constrain_local"] @@
         Expression.add_attributes attrs expr)
 
-  let of_expr expr = Lexp_local expr
+  let of_expr =
+    Expression.match_jane_syntax_piece feature @@ fun expr -> function
+      | ["local"] -> Some (Lexp_local expr)
+      | ["constrain_local"] -> Some (Lexp_constrain_local expr)
+      | _ -> None
 
   let pat_of ~loc ~attrs = function
     | Lpat_local pat ->

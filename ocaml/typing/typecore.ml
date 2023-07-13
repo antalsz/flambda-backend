@@ -659,7 +659,7 @@ let get_alloc_mode_pat ppat =
 
 let get_alloc_mode_exp pexp =
   match Jane_syntax.Expression.of_ast pexp with
-  | Some (Jexp_local (Lexp_local pexp), attrs) ->
+  | Some (Jexp_local (Lexp_constrain_local pexp), attrs) ->
       Alloc_mode.Local, {pexp with pexp_attributes = attrs}
   | Some _ | None -> Alloc_mode.Global, pexp
 
@@ -3523,6 +3523,7 @@ let is_local_returning_expr e =
     | Some (jexp, _attrs) -> begin
         match jexp with
         | Jexp_local (Lexp_local _) -> true, e.pexp_loc (* Yes, the outer loc *)
+        | Jexp_local (Lexp_constrain_local _) -> false, e.pexp_loc
         | Jexp_comprehension _ -> false, e.pexp_loc
         | Jexp_immutable_array _ -> false, e.pexp_loc
         | Jexp_unboxed_constant _ -> false, e.pexp_loc
@@ -3756,6 +3757,8 @@ and type_approx_aux env sexp in_function ty_expected =
 and type_approx_aux_jane_syntax env _in_function ty_expected
       : Jane_syntax.Expression.t -> _ = function
   | Jexp_local (Lexp_local e) ->
+      type_approx_aux env e None ty_expected
+  | Jexp_local (Lexp_constrain_local e) ->
       type_approx_aux env e None ty_expected
   | Jexp_comprehension (Cexp_list_comprehension _ | Cexp_array_comprehension _)
   | Jexp_immutable_array (Iaexp_immutable_array _)
@@ -4126,6 +4129,8 @@ let rec is_inferred sexp =
   | _ -> false
 and is_inferred_jane_syntax : Jane_syntax.Expression.t -> _ = function
   | Jexp_local (Lexp_local e) ->
+      is_inferred e
+  | Jexp_local (Lexp_constrain_local e) ->
       is_inferred e
   | Jexp_comprehension (Cexp_list_comprehension _ | Cexp_array_comprehension _)
   | Jexp_immutable_array (Iaexp_immutable_array _)
@@ -7004,6 +7009,8 @@ and type_let
   and jexp_is_fun : Jane_syntax.Expression.t -> _ = function
     | Jexp_local (Lexp_local e) ->
         sexp_is_fun e
+    | Jexp_local (Lexp_constrain_local e) ->
+        sexp_is_fun e
     | Jexp_comprehension ( Cexp_list_comprehension  _
                          | Cexp_array_comprehension _)
     | Jexp_immutable_array (Iaexp_immutable_array _)
@@ -7441,6 +7448,12 @@ and type_local_expr
           ty_expected_explained
       in
       { exp with exp_loc = loc }
+  | Lexp_constrain_local _ ->
+      (* This will be replaced in nroberts's (@ncik-roberts's) forthcoming
+         syntactic function arity parsing patch *)
+      Misc.fatal_errorf
+        "%a:@ Unexpected synthesized Lexp_constrain_local:"
+        Location.print_loc loc
 
 (* What modes should comprehensions use?  Let us be generic over the sequence
    type we use for comprehensions, calling it [sequence] (standing for either

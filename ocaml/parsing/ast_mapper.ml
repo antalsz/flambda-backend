@@ -517,6 +517,7 @@ module E = struct
 
   let map_lexp sub : L.expression -> L.expression = function
     | Lexp_local expr -> Lexp_local (sub.expr sub expr)
+    | Lexp_constrain_local expr -> Lexp_constrain_local (sub.expr sub expr)
 
   let map_iterator sub : C.iterator -> C.iterator = function
     | Range { start; stop; direction } ->

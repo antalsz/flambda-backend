@@ -1875,6 +1875,10 @@ and local_expr ctxt f (lexp : Jane_syntax.Local.expression) =
   match lexp with
   | Lexp_local expr ->
     pp f "@[<2>local_ %a@]" (expression ctxt) expr
+  | Lexp_constrain_local expr ->
+    (* Synthesized to record that we should type-check this expression
+       differently; not reflected in the output *)
+    expression ctxt f expr
 
 and comprehension_expr ctxt f (cexp : Jane_syntax.Comprehensions.expression) =
   let punct, comp = match cexp with
