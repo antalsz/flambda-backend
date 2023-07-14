@@ -300,8 +300,9 @@ let rec class_params_def ctxt f =  function
         (list (type_param ctxt) ~sep:",") l
 
 and type_with_label ctxt f (label, c) =
+  (* [core_type1] doesn't parenthesize [local_] *)
   match label with
-  | Nolabel    -> core_type1 ctxt f c (* otherwise parenthesize *)
+  | Nolabel    -> core_type1 ctxt f c
   | Labelled s -> pp f "%s:%a" s (core_type1 ctxt) c
   | Optional s -> pp f "?%s:%a" s (core_type1 ctxt) c
 
@@ -424,7 +425,9 @@ and core_type1 ctxt f x =
 
 and core_type1_jane_syntax ctxt f : Jane_syntax.Core_type.t -> _ = function
   | Jtyp_local (Ltyp_local _) as jty ->
-      paren true (core_type_jane_syntax ctxt) f jty
+      core_type_jane_syntax ctxt f jty
+      (* [local_ t] doesn't need parentheses, even where [core_type1] generally
+         does *)
 
 and core_type_jane_syntax ctxt f : Jane_syntax.Core_type.t -> _ = function
   | Jtyp_local (Ltyp_local ty) -> local_type core_type ctxt f ty
@@ -589,10 +592,13 @@ and label_exp ctxt f (l,opt,p) =
       let modifier ~is_local = if is_local then "local_ " else "" in
       let non_punned ~is_local = match opt with
         | Some o ->
+            (* The [is_local] manipulation avoids parentheses here when we have
+               [local_ pat] *)
             pp f "?%s:(%s%a=@;%a)"
               rest
-              (modifier ~is_local)
-              (pattern1 ctxt) p (expression ctxt) o
+              (modifier ~is_local:(Option.is_some is_local))
+              (pattern1 ctxt) (Option.value ~default:p is_local)
+              (expression ctxt) o
         | None ->
             non_punned ()
       in
@@ -604,19 +610,18 @@ and label_exp ctxt f (l,opt,p) =
             pp f "?%s" rest
       in
       match Jane_syntax.Pattern.of_ast p with
-      | Some (Jpat_local (Lpat_local lp), []) when is_punned lp ->
-          punned ~is_local:true
-      | Some
-          ( (Jpat_local _ | Jpat_immutable_array _ | Jpat_unboxed_constant _)
-          , _
-          )
-        ->
-          non_punned ~is_local:false
+      | Some (Jpat_local (Lpat_local lp), attrs) ->
+          if is_punned lp && attrs = [] then
+            punned ~is_local:false
+          else
+            non_punned ~is_local:(Some lp)
+      | Some ((Jpat_immutable_array _ | Jpat_unboxed_constant _), _) ->
+          non_punned ~is_local:None
       | None ->
       if is_punned p then
         punned ~is_local:false
       else
-        non_punned ~is_local:false
+        non_punned ~is_local:None
     end
   | Labelled l -> begin
       let non_punned, is_punned = punnable '~' l in
