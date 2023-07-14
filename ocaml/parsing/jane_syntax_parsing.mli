@@ -140,7 +140,13 @@ end
 (** Each syntactic category that contains novel syntactic features has a
     corresponding module of this module type.  We're adding these lazily as we
     need them. When you add another one, make sure also to add special handling
-    in [Ast_iterator] and [Ast_mapper]. *)
+    in [Ast_iterator] and [Ast_mapper].
+
+    This module type comes in two varieties: [AST_with_attributes] and
+    [AST_without_attributes].  They reflect whether desugaring an OCaml AST into
+    our extended one should ([with]) or shouldn't ([without]) return the
+    attributes as well.  This choice is recorded in the [with_attributes]
+    type. *)
 module type AST = sig
   (** The AST type (e.g., [Parsetree.expression]) *)
   type ast
@@ -167,6 +173,15 @@ module type AST = sig
     -> (unit -> ast)
     -> ast
 
+  (** XXX ASZ DOCUMENT ME *)
+  val match_jane_syntax_piece
+    : Feature.t -> (ast -> string list -> 'a option) -> ast -> 'a
+
+  (** How to attach attributes to the result of [make_of_ast].  Will either
+      return a pair (see [AST_with_attributes]) or will simply be equal to ['a]
+      when there are no attributes ([AST_without_attributes]). *)
+  type 'a with_attributes
+
   (** Build an [of_ast] function. The return value of this function should be
       used to implement [of_ast] in modules satisfying the signature
       [Jane_syntax.AST].
@@ -188,22 +203,22 @@ module type AST = sig
         extended pattern AST, this function will return [None] if it spots an
         embedding that claims to be from [Language_extension Comprehensions].)
     *)
-    -> (ast -> 'a option)
+    -> (ast -> 'a with_attributes option)
 end
 
-(** As [AST], but includes attribute-manipulating functions.  These can be
-    useful when writing new Jane-syntax features using the attribute
-    encoding. *)
+(** An [AST] that keeps track of attributes.  This also includes
+    attribute-manipulating functions. *)
 module type AST_with_attributes = sig
-  include AST
+  include AST with type 'ast with_attributes := 'ast * Parsetree.attributes
 
-  (** Add attributes to an AST term, prepending them to the attributes already
+  (** Add attributes to an AST term, appending them to the attributes already
       present. *)
   val add_attributes : Parsetree.attributes -> ast -> ast
-
-  (** Redefine the attributes on an AST term. *)
-  val set_attributes : ast -> Parsetree.attributes -> ast
 end
+
+(** An [AST] that does not keep track of attributes. *)
+module type AST_without_attributes =
+  AST with type 'ast with_attributes := 'ast
 
 module Expression :
   AST_with_attributes with type ast = Parsetree.expression
@@ -215,10 +230,10 @@ module Module_type :
   AST_with_attributes with type ast = Parsetree.module_type
 
 module Signature_item :
-  AST with type ast = Parsetree.signature_item
+  AST_without_attributes with type ast = Parsetree.signature_item
 
 module Structure_item :
-  AST with type ast = Parsetree.structure_item
+  AST_without_attributes with type ast = Parsetree.structure_item
 
 module Core_type :
   AST_with_attributes with type ast = Parsetree.core_type
@@ -237,28 +252,6 @@ module Extension_constructor :
     require both [Comprehensions] and [Immutable_arrays]). *)
 val assert_extension_enabled :
   loc:Location.t -> 'a Language_extension.t -> 'a -> unit
-
-(* CR-someday nroberts: An earlier version of this revealed less of its
-   implementation in its name: it was called [match_jane_syntax], and
-   was a function from ast to ast. This has some advantages (less revealing
-   of the Jane Syntax encoding) but I felt it important to document the caller's
-   responsibility to plumb through uninterpreted attributes.
-
-   Given that it only has one callsite currently, we decided to keep this
-   approach for now, but we could revisit this decision if we use it more
-   often.
-*)
-(** Extracts the first attribute (in list order) that was inserted by the
-    Jane Syntax framework, and returns the rest of the attributes in the
-    same relative order as was input.
-
-    This can be used by [Jane_syntax] to peel off individual attributes in
-    order to process a Jane Syntax element that consists of multiple
-    nested ASTs.
-*)
-val find_and_remove_jane_syntax_attribute
-  :  Parsetree.attributes
-  -> (Embedded_name.t * Parsetree.attributes) option
 
 (** Errors around the representation of our extended ASTs.  These should mostly
     just be fatal, but they're needed for one test case
