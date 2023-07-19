@@ -1875,6 +1875,8 @@ and local_expr ctxt f (lexp : Jane_syntax.Local.expression) =
   match lexp with
   | Lexp_local expr ->
     pp f "@[<2>local_ %a@]" (expression ctxt) expr
+  | Lexp_exclave expr ->
+    pp f "@[<2>exclave_ %a@]" (expression ctxt) expr
   | Lexp_constrain_local expr ->
     (* Synthesized to record that we should type-check this expression
        differently; not reflected in the output *)

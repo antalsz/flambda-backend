@@ -319,6 +319,7 @@ and add_expr_jane_syntax bv : Jane_syntax.Expression.t -> _ = function
 
 and add_local_expr bv : Jane_syntax.Local.expression -> _ = function
   | Lexp_local e -> add_expr bv e
+  | Lexp_exclave e -> add_expr bv e
   | Lexp_constrain_local e -> add_expr bv e
 
 and add_comprehension_expr bv : Jane_syntax.Comprehensions.expression -> _ =

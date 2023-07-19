@@ -952,7 +952,29 @@ struct
   let add_attributes = AST.add_attributes
 end
 
-module Expression = Make_attribute_ast(Expression0)
+module Expression = struct
+  include Make_attribute_ast(Expression0)
+
+  let make_dummy ~attrs expr =
+    let unit =
+      Ast_helper.Exp.construct
+        (Location.mkloc (Longident.Lident "()") !Ast_helper.default_loc)
+        None
+    in
+    Ast_helper.Exp.sequence ~attrs unit expr
+
+  let match_dummy expr =
+    match expr.pexp_desc with
+    | Pexp_sequence
+        ( { pexp_desc =
+              Pexp_construct ({ txt = Lident "()"; loc = _ }, None)
+          ; pexp_attributes = []
+          ; pexp_loc = _; pexp_loc_stack = _ }
+        , expr') ->
+      Some expr'
+    | _ -> None
+end
+
 module Pattern = Make_attribute_ast(Pattern0)
 module Module_type = Make_attribute_ast(Module_type0)
 module Signature_item = Make_extension_ast(Signature_item0)

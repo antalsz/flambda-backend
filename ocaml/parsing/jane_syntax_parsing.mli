@@ -221,8 +221,20 @@ end
 module type AST_without_attributes =
   AST with type 'ast with_attributes := 'ast
 
-module Expression :
-  AST_with_attributes with type ast = Parsetree.expression
+module Expression : sig
+  include AST_with_attributes with type ast = Parsetree.expression
+
+  (** Wraps an expression in a dummy do-nothing expression, to get an extra spot
+      to hang a location.  By default, the locations are set to
+      [!Ast_helper.default_loc].  Currently encoded as [(); e]. *)
+  val make_dummy :
+    attrs:Parsetree.attributes -> Parsetree.expression -> Parsetree.expression
+
+  (** Removes the extra do-nothing expression node created with [make_dummy] if
+      it was present, ignoring attributes.  Currently turns [(); e] into
+      [Some e]. *)
+  val match_dummy : Parsetree.expression -> Parsetree.expression option
+end
 
 module Pattern :
   AST_with_attributes with type ast = Parsetree.pattern

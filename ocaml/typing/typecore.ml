@@ -3525,13 +3525,15 @@ let is_local_returning_expr e =
   in
   let rec loop e =
     match Jane_syntax.Expression.of_ast e with
-    | Some (jexp, _attrs) -> begin
-        match jexp with
-        | Jexp_local (Lexp_local _) -> true, e.pexp_loc (* Yes, the outer loc *)
-        | Jexp_local (Lexp_constrain_local _) -> false, e.pexp_loc
-        | Jexp_comprehension _ -> false, e.pexp_loc
-        | Jexp_immutable_array _ -> false, e.pexp_loc
-        | Jexp_unboxed_constant _ -> false, e.pexp_loc
+    | Some (jexp, _attrs) -> begin match jexp with
+        | Jexp_local (Lexp_local _) ->
+            true, e.pexp_loc
+        | Jexp_local (Lexp_constrain_local e) ->
+            loop e
+        | Jexp_local (Lexp_exclave _)
+        | Jexp_comprehension _ | Jexp_immutable_array _
+        | Jexp_unboxed_constant _ ->
+            false, e.pexp_loc
       end
     | None      ->
     match e.pexp_desc with
@@ -3767,6 +3769,8 @@ and type_approx_aux env sexp in_function ty_expected =
 and type_approx_aux_jane_syntax env _in_function ty_expected
       : Jane_syntax.Expression.t -> _ = function
   | Jexp_local (Lexp_local e) ->
+      type_approx_aux env e None ty_expected
+  | Jexp_local (Lexp_exclave e) ->
       type_approx_aux env e None ty_expected
   | Jexp_local (Lexp_constrain_local e) ->
       type_approx_aux env e None ty_expected
@@ -4140,6 +4144,8 @@ let rec is_inferred sexp =
 and is_inferred_jane_syntax : Jane_syntax.Expression.t -> _ = function
   | Jexp_local (Lexp_local e) ->
       is_inferred e
+  | Jexp_local (Lexp_exclave e) ->
+      is_inferred e
   | Jexp_local (Lexp_constrain_local e) ->
       is_inferred e
   | Jexp_comprehension (Cexp_list_comprehension _ | Cexp_array_comprehension _)
@@ -4461,36 +4467,6 @@ and type_expect_
           ty_expected_explained
       in
       { exp with exp_loc = loc }
-  | Pexp_apply
-      ({ pexp_desc = Pexp_extension({
-         txt = "extension.exclave" | "ocaml.exclave" | "exclave" as txt}, PStr []) },
-       [Nolabel, sbody]) ->
-      if (txt = "extension.exclave") && not (Language_extension.is_enabled Local) then
-          raise (Typetexp.Error (loc, Env.empty, Unsupported_extension Local));
-      begin
-        match expected_mode.position with
-        | RNontail ->
-          raise (Error (loc, env, Exclave_in_nontail_position))
-        | RTail (mode, _) ->
-          (* mode' is RNontail, because currently our language cannot construct
-             region in the tail of another region.*)
-          let mode' = mode_exact mode in
-          (* The middle-end relies on all functions which allocate into their
-             parent's region having a return mode of local. *)
-          submode ~loc ~env ~reason:Other Value_mode.local mode';
-          let new_env = Env.add_exclave_lock env in
-          let exp =
-            type_expect ?in_function ~recarg new_env mode' sbody ty_expected_explained
-          in
-          submode ~loc ~env ~reason:Other Value_mode.regional expected_mode;
-          { exp_desc = Texp_exclave exp;
-            exp_loc = loc;
-            exp_extra = [];
-            exp_type = exp.exp_type;
-            exp_env = env;
-            exp_attributes = sexp.pexp_attributes;
-          }
-      end
   | Pexp_apply(sfunct, sargs) ->
       assert (sargs <> []);
       let pm = position_and_mode env expected_mode sexp in
@@ -7019,6 +6995,8 @@ and type_let
   and jexp_is_fun : Jane_syntax.Expression.t -> _ = function
     | Jexp_local (Lexp_local e) ->
         sexp_is_fun e
+    | Jexp_local (Lexp_exclave e) ->
+        sexp_is_fun e
     | Jexp_local (Lexp_constrain_local e) ->
         sexp_is_fun e
     | Jexp_comprehension ( Cexp_list_comprehension  _
@@ -7439,7 +7417,7 @@ and type_expect_jane_syntax
 
 and type_local_expr
       ~in_function ~recarg ~loc ~env ~expected_mode ~ty_expected_explained
-      ~ty_expected ~attributes:_
+      ~ty_expected ~attributes
   : Jane_syntax.Local.expression -> _ = function
   | Lexp_local sbody ->
       let mode = if mode_cross env ty_expected then
@@ -7458,6 +7436,30 @@ and type_local_expr
           ty_expected_explained
       in
       { exp with exp_loc = loc }
+  | Lexp_exclave sbody -> begin
+      match expected_mode.position with
+      | RNontail ->
+        raise (Error (loc, env, Exclave_in_nontail_position))
+      | RTail (mode, _) ->
+        (* mode' is RNontail, because currently our language cannot construct
+           region in the tail of another region.*)
+        let mode' = mode_exact mode in
+        (* The middle-end relies on all functions which allocate into their
+           parent's region having a return mode of local. *)
+        submode ~loc ~env ~reason:Other Value_mode.local mode';
+        let new_env = Env.add_exclave_lock env in
+        let exp =
+          type_expect ?in_function ~recarg new_env mode' sbody ty_expected_explained
+        in
+        submode ~loc ~env ~reason:Other Value_mode.regional expected_mode;
+        { exp_desc = Texp_exclave exp;
+          exp_loc = loc;
+          exp_extra = [];
+          exp_type = exp.exp_type;
+          exp_env = env;
+          exp_attributes = attributes
+        }
+    end
   | Lexp_constrain_local exp ->
       type_expect_
         ?in_function ~recarg env expected_mode exp ty_expected_explained

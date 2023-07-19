@@ -178,15 +178,6 @@ let global_if global_flag sloc carg =
   | Nothing ->
       carg
 
-let exclave_ext_loc loc = mkloc "extension.exclave" loc
-
-let exclave_extension loc =
-  Exp.mk ~loc:Location.none
-    (Pexp_extension(exclave_ext_loc loc, PStr []))
-
-let mkexp_exclave ~loc ~kwd_loc exp =
-  ghexp ~loc (Pexp_apply(exclave_extension (make_loc kwd_loc), [Nolabel, exp]))
-
 let curry_attr loc =
   mk_attr ~loc:Location.none (mkloc "extension.curry" loc) (PStr [])
 
@@ -2562,7 +2553,8 @@ expr:
      { Jane_syntax.Local.expr_of ~loc:(make_loc $sloc) ~attrs:[]
          (Lexp_local $2) }
   | EXCLAVE seq_expr
-     { mkexp_exclave ~loc:$sloc ~kwd_loc:($loc($1)) $2 }
+     { Jane_syntax.Local.expr_of ~loc:(make_loc $sloc) ~attrs:[]
+         (Lexp_exclave $2) }
 ;
 %inline expr_attrs:
   | LET MODULE ext_attributes mkrhs(module_name) module_binding_body IN seq_expr

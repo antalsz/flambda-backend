@@ -188,7 +188,7 @@ let[@inline never] return_local a = local_ (Glob a)
 
 let f () =
   let (Glob x) = return_local 1 in
-  [%exclave]
+  exclave_
     (let (_ : _) = return_local 99 in
      assert (x = 1))
 ;;

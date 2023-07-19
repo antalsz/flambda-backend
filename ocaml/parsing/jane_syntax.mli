@@ -31,6 +31,7 @@ module Local : sig
 
   type expression =
     | Lexp_local of Parsetree.expression
+    | Lexp_exclave of Parsetree.expression
     | Lexp_constrain_local of Parsetree.expression
       (** This represents the shadow [local_] that is inserted on the RHS of a
           [let local_ f : t = e in ...] binding.
