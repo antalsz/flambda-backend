@@ -98,7 +98,7 @@ module Feature : sig
     | Builtin
 
   (** The component of an attribute or extension name that identifies the
-      feature. This is third component.
+      feature. This is the third component.
   *)
   val extension_component : t -> string
 end
@@ -163,10 +163,11 @@ module type AST = sig
 
   (** As [make_jane_syntax], but specifically for the AST node corresponding to
       the entire piece of novel syntax (e.g., for a list comprehension, the
-      whole [[x for x in xs]], and not a subcomponent like [for x in xs]).  This
-      sets [Ast_helper.default_loc] locally to the [ghost] version of the
-      provided location, which is why the [ast] is generated from a function
-      call; it is during this call that the location is so set. *)
+      whole [[x for x in xs]], and not a subcomponent like [for x in xs]).  The
+      provided location is used for the location of the resulting AST node.
+      Additionally, [Ast_helper.default_loc] is set locally to the [ghost]
+      version of that location, which is why the [ast] is generated from a
+      function call; it is during this call that the location is so set. *)
   val make_entire_jane_syntax
     :  loc:Location.t
     -> Feature.t

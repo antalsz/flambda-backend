@@ -651,19 +651,23 @@ let extract_label_names env ty =
 let is_principal ty =
   not !Clflags.principal || get_level ty = generic_level
 
-let get_alloc_mode_pat ppat =
-  match Jane_syntax.Pattern.of_ast ppat with
-  | Some (Jpat_local (Lpat_local ppat), attrs) ->
-      Alloc_mode.Local, {ppat with ppat_attributes = attrs}
-  | Some _ | None -> Alloc_mode.Global, ppat
+let unwrap_local_pat spat = match Jane_syntax.Pattern.of_ast spat with
+  | Some (Jpat_local (Lpat_local spat), _) -> Some spat
+  | Some _ | None -> None
 
-let get_alloc_mode_exp pexp =
+let get_fun_arg_alloc_mode spat =
+  match unwrap_local_pat spat with
+  | Some _ -> Alloc_mode.Local
+  | None   -> Alloc_mode.Global
+
+let extract_constraint_alloc_mode pexp =
   match Jane_syntax.Expression.of_ast pexp with
   | Some (Jexp_local (Lexp_constrain_local pexp), attrs) ->
       Alloc_mode.Local, {pexp with pexp_attributes = attrs}
   | Some _ | None -> Alloc_mode.Global, pexp
 
 let has_poly_constraint spat =
+  let spat = Option.value ~default:spat (unwrap_local_pat spat) in
   match spat.ppat_desc with
   | Ppat_constraint(_, styp) -> begin
       match styp.ptyp_desc with
@@ -2246,15 +2250,16 @@ let rec type_pat
   Builtin_attributes.warning_scope sp.ppat_attributes
     (fun () ->
        type_pat_aux tps category ~no_existentials ~mode
-         ~alloc_mode ~env sp expected_ty k
+         ~alloc_mode ~explicitly_local:false ~env sp expected_ty k
     )
 
 and type_pat_aux
   : type k r . type_pat_state -> k pattern_category -> no_existentials:_
-         -> mode:_ -> alloc_mode:expected_pat_mode -> env:_ -> _ -> _
+         -> mode:_ -> alloc_mode:expected_pat_mode -> explicitly_local:_
+         -> env:_ -> _ -> _
          -> (k general_pattern -> r) -> r
   = fun tps category ~no_existentials ~mode
-      ~alloc_mode ~env sp expected_ty k ->
+      ~alloc_mode ~explicitly_local ~env sp expected_ty k ->
   let type_pat tps category ?(mode=mode) ?(alloc_mode=alloc_mode) ?(env=env) =
     type_pat tps category ~no_existentials ~mode ~alloc_mode ~env
   in
@@ -2308,10 +2313,9 @@ and type_pat_aux
          here.  This shouldn't mess up the diff *too* much. *)
       match jpat with
       | Jpat_local (Lpat_local sp) ->
-          (* Locality is handled separately; see the uses of
-             [get_alloc_mode_pat] *)
           type_pat_aux
-            tps category ~no_existentials ~mode ~alloc_mode ~env
+            tps category
+            ~no_existentials ~mode ~alloc_mode ~explicitly_local:true ~env
             sp expected_ty k
       | Jpat_immutable_array (Iapat_immutable_array spl) ->
           type_pat_array Immutable spl attrs
@@ -2742,8 +2746,9 @@ and type_pat_aux
   | Ppat_constraint(sp', sty) ->
       assert construction_not_used_in_counterexamples;
       (* Pretend separate = true *)
-      let type_mode, sp = get_alloc_mode_pat sp in
-      let _ = sp in (* We don't want to accidentally use the old one *)
+      let type_mode =
+        if explicitly_local then Alloc_mode.Local else Alloc_mode.Global
+      in
       let cty, ty, expected_ty' =
         solve_Ppat_constraint ~refine tps loc env type_mode sty expected_ty in
       type_pat ~alloc_mode tps category sp' expected_ty' (fun p ->
@@ -3654,20 +3659,16 @@ and approx_type_jst ~loc env _attrs : Jane_syntax.Core_type.t -> _ = function
          generate this *)
       raise (Typetexp.Error(loc, env, Misplaced_local))
 
-let type_pattern_approx_jane_syntax : Jane_syntax.Pattern.t -> _ = function
-  | Jpat_local (Lpat_local _) ->
-      (* The only check for [local_] is with [Ppat_constraint] *)
-      ()
-  | Jpat_immutable_array (Iapat_immutable_array _)
-  | Jpat_unboxed_constant (Float _ | Integer _) -> ()
-
-let type_pattern_approx env spat ty_expected =
+let rec type_pattern_approx ~explicitly_local env spat ty_expected =
   match Jane_syntax.Pattern.of_ast spat with
-  | Some (jpat, _attrs) -> type_pattern_approx_jane_syntax jpat
+  | Some (jpat, _attrs) ->
+      type_pattern_approx_jane_syntax ~env ~ty_expected jpat
   | None      ->
   match spat.ppat_desc with
   | Ppat_constraint(_, ({ptyp_desc=Ptyp_poly _} as sty)) ->
-      let arg_type_mode, spat = get_alloc_mode_pat spat in
+      let arg_type_mode =
+        if explicitly_local then Alloc_mode.Local else Alloc_mode.Global
+      in
       let ty_pat =
         Typetexp.transl_simple_type env ~closed:false arg_type_mode sty
       in
@@ -3676,12 +3677,21 @@ let type_pattern_approx env spat ty_expected =
       end;
   | _ -> ()
 
+and type_pattern_approx_jane_syntax ~env ~ty_expected
+  : Jane_syntax.Pattern.t -> _ = function
+  | Jpat_local (Lpat_local spat) ->
+      type_pattern_approx ~explicitly_local:true env spat ty_expected
+  | Jpat_immutable_array (Iapat_immutable_array _)
+  | Jpat_unboxed_constant (Float _ | Integer _) -> ()
+
+let type_pattern_approx = type_pattern_approx ~explicitly_local:false
+
 let rec type_function_approx env loc label spato sexp in_function ty_expected =
   let spat_mode, has_poly =
     match spato with
     | None -> Alloc_mode.Global, false
     | Some spat ->
-        let spat_mode, spat = get_alloc_mode_pat spat in
+        let spat_mode = get_fun_arg_alloc_mode spat in
         let has_poly = has_poly_constraint spat in
         if has_poly && is_optional label then
           raise(Error(spat.ppat_loc, env, Optional_poly_param));
@@ -4384,7 +4394,7 @@ and type_expect_
   | Pexp_fun (l, Some default, spat, sbody) ->
       assert(is_optional l); (* default allowed only with optional argument *)
       let open Ast_helper in
-      let arg_pat_mode, spat = get_alloc_mode_pat spat in
+      let arg_pat_mode = get_fun_arg_alloc_mode spat in
       let default_loc = default.pexp_loc in
       (* Defaults are always global. They can be moved out of the function's
          region by Simplf.split_default_wrapper, or they could be evaluated
@@ -4427,7 +4437,7 @@ and type_expect_
                     expected_mode ty_expected_explained
                     l ~arg_pat_mode ~has_poly:false [Exp.case pat body]
   | Pexp_fun (l, None, spat, sbody) ->
-      let arg_pat_mode, spat = get_alloc_mode_pat spat in
+      let arg_pat_mode = get_fun_arg_alloc_mode spat in
       let has_poly = has_poly_constraint spat in
       if has_poly && is_optional l then
         raise(Error(spat.ppat_loc, env, Optional_poly_param));
@@ -5013,7 +5023,7 @@ and type_expect_
   | Pexp_constraint (sarg, sty) ->
      (* Pretend separate = true, 1% slowdown for lablgtk *)
       begin_def ();
-      let type_mode, sexp = get_alloc_mode_exp sexp in
+      let type_mode, sarg = extract_constraint_alloc_mode sarg in
       let cty = Typetexp.transl_simple_type env ~closed:false type_mode sty in
       let ty = cty.ctyp_type in
       end_def ();
@@ -5033,7 +5043,7 @@ and type_expect_
       (* Pretend separate = true, 1% slowdown for lablgtk *)
       (* Also see PR#7199 for a problem with the following:
          let separate = !Clflags.principal || Env.has_local_constraints env in*)
-      let type_mode, sexp = get_alloc_mode_exp sexp in
+      let type_mode, sarg = extract_constraint_alloc_mode sarg in
       let (arg, ty',cty,cty') =
         match sty with
         | None ->
@@ -7448,12 +7458,9 @@ and type_local_expr
           ty_expected_explained
       in
       { exp with exp_loc = loc }
-  | Lexp_constrain_local _ ->
-      (* This will be replaced in nroberts's (@ncik-roberts's) forthcoming
-         syntactic function arity parsing patch *)
-      Misc.fatal_errorf
-        "%a:@ Unexpected synthesized Lexp_constrain_local:"
-        Location.print_loc loc
+  | Lexp_constrain_local exp ->
+      type_expect_
+        ?in_function ~recarg env expected_mode exp ty_expected_explained
 
 (* What modes should comprehensions use?  Let us be generic over the sequence
    type we use for comprehensions, calling it [sequence] (standing for either

@@ -32,8 +32,8 @@ module Local : sig
   type expression =
     | Lexp_local of Parsetree.expression
     | Lexp_constrain_local of Parsetree.expression
-      (** This represents the shadow `local_` that is inserted on the RHS of a
-          `let local_ f : t = e in ...` binding.
+      (** This represents the shadow [local_] that is inserted on the RHS of a
+          [let local_ f : t = e in ...] binding.
 
           Invariant: [Lexp_constrain_local] occurs on the LHS of a
           [Pexp_constraint] or [Pexp_coerce] node.
@@ -41,9 +41,10 @@ module Local : sig
           We don't inline the definition of [Pexp_constraint] or [Pexp_coerce]
           here because nroberts's (@ncik-roberts's) forthcoming syntactic
           function arity parsing patch handles this case more directly, and we
-          don't want to double the amount of work we're doing.. *)
+          don't want to double the amount of work we're doing. *)
 
   type pattern = Lpat_local of Parsetree.pattern
+  (** Invariant: [Lpat_local] is always the outermost part of a pattern. *)
 
   val type_of :
     loc:Location.t -> attrs:Parsetree.attributes ->

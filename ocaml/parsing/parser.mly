@@ -2885,10 +2885,11 @@ let_binding_body_no_punning:
             (ghpat ~loc:patloc (Ppat_constraint(v, typ)))
         in
         let exp =
-          mkexp_constraint
-            ~loc:$sloc
-            (local_if Synthesized_constraint $1 $sloc $5)
-            $3
+          local_if Expression $1 $sloc
+            (mkexp_constraint
+              ~loc:$sloc
+              (local_if Synthesized_constraint $1 $sloc $5)
+              $3)
         in
         (pat, exp) }
   | optional_local let_ident COLON poly(core_type) EQUAL seq_expr

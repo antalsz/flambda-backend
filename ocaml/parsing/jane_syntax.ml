@@ -52,10 +52,12 @@ module Local = struct
   type nonrec expression =
     | Lexp_local of expression
     | Lexp_constrain_local of expression
-      (* Invariant: [Lexp_constrain_local] wraps a [Pexp_constraint] node.  For
-         more, see the [.mli] file. *)
+      (* Invariant: [Lexp_constrain_local] is the direct child of a
+         [Pexp_constraint] or [Pexp_coerce] node.  For more, see the [.mli]
+         file. *)
 
   type nonrec pattern = Lpat_local of pattern
+  (* Invariant: [Lpat_local] is always the outermost part of a pattern. *)
 
   let type_of ~loc ~attrs = function
     | Ltyp_local typ ->
@@ -91,19 +93,33 @@ module Local = struct
     | Lexp_local expr ->
       (* See Note [Wrapping with make_entire_jane_syntax] *)
       Expression.make_entire_jane_syntax ~loc feature (fun () ->
+        (* We encode [local_ e] as [(); e] in order to have a place to hang both
+           the outer location (on the [;]) and the location of [e]. *)
+        let unit =
+          Ast_helper.Exp.construct
+            (Location.mkloc (Longident.Lident "()") !Ast_helper.default_loc)
+            None
+        in
         (* Delete this [make_jane_syntax] when you delete the
            [Lexp_constrain_local] constructor *)
         Expression.make_jane_syntax feature ["local"] @@
-        Expression.add_attributes attrs expr)
+        Ast_helper.Exp.sequence ~attrs unit expr)
     | Lexp_constrain_local expr ->
       Expression.make_entire_jane_syntax ~loc feature (fun () ->
         Expression.make_jane_syntax feature ["constrain_local"] @@
         Expression.add_attributes attrs expr)
 
   let of_expr =
-    Expression.match_jane_syntax_piece feature @@ fun expr -> function
-      | ["local"] -> Some (Lexp_local expr)
-      | ["constrain_local"] -> Some (Lexp_constrain_local expr)
+    Expression.match_jane_syntax_piece feature @@ fun expr subparts ->
+      match subparts, expr.pexp_desc with
+      | ["local"], Pexp_sequence
+                     ({ pexp_desc =
+                          Pexp_construct ({ txt = Lident "()"; loc = _ }, None)
+                      ; pexp_attributes = []
+                      ; pexp_loc = _; pexp_loc_stack = _ },
+                      expr) ->
+          Some (Lexp_local expr)
+      | ["constrain_local"], _ -> Some (Lexp_constrain_local expr)
       | _ -> None
 
   let pat_of ~loc ~attrs = function
