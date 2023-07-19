@@ -361,7 +361,6 @@ module Immutable_arrays = struct
       Expression.make_entire_jane_syntax ~loc feature (fun () ->
         Ast_helper.Exp.array ~attrs elts)
 
-  (* Returns remaining unconsumed attributes *)
   let of_expr expr = match expr.pexp_desc with
     | Pexp_array elts -> Iaexp_immutable_array elts
     | _ -> failwith "Malformed immutable array expression"
@@ -372,7 +371,6 @@ module Immutable_arrays = struct
       Pattern.make_entire_jane_syntax ~loc feature (fun () ->
         Ast_helper.Pat.array ~attrs elts)
 
-  (* Returns remaining unconsumed attributes *)
   let of_pat pat = match pat.ppat_desc with
     | Ppat_array elts -> Iapat_immutable_array elts
     | _ -> failwith "Malformed immutable array pattern"
