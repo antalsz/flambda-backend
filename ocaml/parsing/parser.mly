@@ -178,22 +178,6 @@ let global_if global_flag sloc carg =
   | Nothing ->
       carg
 
-let curry_attr loc =
-  mk_attr ~loc:Location.none (mkloc "extension.curry" loc) (PStr [])
-
-let is_curry_attr attr =
-  attr.attr_name.txt = "extension.curry"
-
-let mktyp_curry typ loc =
-  {typ with ptyp_attributes = curry_attr loc :: typ.ptyp_attributes}
-
-let maybe_curry_typ typ loc =
-  match typ.ptyp_desc with
-  | Ptyp_arrow _ ->
-      if List.exists is_curry_attr typ.ptyp_attributes then typ
-      else mktyp_curry typ (make_loc loc)
-  | _ -> typ
-
 (* TODO define an abstraction boundary between locations-as-pairs
    and locations-as-Location.t; it should be clear when we move from
    one world to the other *)
@@ -3796,7 +3780,8 @@ strict_function_type:
         { Ptyp_arrow(label,
             local_if Type arg_local $loc(arg_local) domain,
             local_if Type ret_local $loc(ret_local)
-              (maybe_curry_typ codomain $loc(codomain))) }
+              (Jane_syntax.Builtin.mark_curried
+                 ~loc:(make_loc $loc(codomain)) codomain)) }
     )
     { $1 }
 ;

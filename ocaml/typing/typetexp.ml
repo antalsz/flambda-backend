@@ -412,7 +412,7 @@ let rec extract_params styp =
   | Ptyp_arrow (l, a, r) ->
       let arg_mode, a = get_alloc_mode a in
       let params, ret, ret_mode =
-        if Builtin_attributes.has_curry r.ptyp_attributes then final r
+        if Jane_syntax.Builtin.is_curried r then final r
         else extract_params r
       in
       (l, arg_mode, a) :: params, ret, ret_mode

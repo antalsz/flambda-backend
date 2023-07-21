@@ -110,7 +110,6 @@ end
     also why we don't expose any functions for rendering or parsing these names;
     that's all handled internally. *)
 module Embedded_name : sig
-
   (** A nonempty list of name components, without the first two components.
       (That is, without the leading root component that identifies it as part of
       the modular syntax mechanism, and without the next component that
@@ -130,7 +129,32 @@ module Embedded_name : sig
   *)
   val of_feature : Feature.t -> string list -> t
 
+  (** Extract the components from an embedded name; just includes the
+      user-specified components, not the leading or erasability components, as
+      with the [components] type. *)
   val components : t -> components
+
+  (** Create a new "marker attribute".  These are Jane-syntax-style attributes,
+      but exist outside of the full Jane syntax machinery; they can be added
+      directly to syntax nodes, aren't matched on and turned into ASTs, and so
+      on and so forth.  The format of the attribute name is not guaranteed to be
+      stable across compiler versions, but it will end with the specified
+      components as if they were the second part of a [components] value.
+
+      Given [let make, extract, has = marker_attribute_handler comps], then:
+
+      - [make ~loc] creates the specified marker attribute at the [ghost]
+        version of the provided location.
+      - [extract attrs] pulls out the specified marker attribute from [attrs],
+        and returns all the other attributes if it was present.  If the specified
+        marker attribute was not present, returns [None].
+      - [has attrs] returns [true] if the list of attributes contains the
+        specified marker attribute, and [false] otherwise.  It's equivalent to
+        [Option.is_some (extract attrs)]. *)
+  val marker_attribute_handler :
+    string list -> (loc:Location.t -> Parsetree.attribute)
+                 * (Parsetree.attributes -> Parsetree.attributes option)
+                 * (Parsetree.attributes -> bool)
 
   (** Print out the embedded form of a Jane-syntax name, in quotes; for use in
       error messages. *)

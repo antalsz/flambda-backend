@@ -41,6 +41,21 @@ open Jane_syntax_parsing
    future syntax features to remember to do this wrapping.
 *)
 
+module Builtin = struct
+  let make_curry_attr, extract_curry_attr, has_curry_attr =
+    Embedded_name.marker_attribute_handler ["curry"]
+
+  let is_curried typ = has_curry_attr typ.ptyp_attributes
+
+  let mark_curried ~loc typ = match typ.ptyp_desc with
+    | Ptyp_arrow _ when not (is_curried typ) ->
+        Core_type.add_attributes [make_curry_attr ~loc] typ
+    | _ -> typ
+
+  let non_syntax_attributes attrs =
+    Option.value ~default:attrs (extract_curry_attr attrs)
+end
+
 (** Locality modes *)
 module Local = struct
   let feature : Feature.t = Language_extension Local

@@ -23,9 +23,36 @@
 (*********************************************)
 (* Individual features *)
 
+(** The ASTs for built-in syntax extensions.  No ASTs as yet; for now, we just
+    have some attribute machinery. *)
+module Builtin : sig
+  (** Mark an arrow type as "curried" (written with parentheses) for the local
+      extension.  This is done unconditionally by the parser: [a -> (b -> c)] is
+      parsed as [a -> ((b -> c)[@CURRY])] for some (private) attribute.  A
+      non-arrow type won't be modified by this function.
+
+      We leave this as an attribute because it's only used internally, and
+      changing function types/adding another kind of arrow is a *lot* of
+      work. *)
+  val mark_curried :
+    loc:Location.t -> Parsetree.core_type -> Parsetree.core_type
+
+  (** Check if a type was marked as curried via [mark_curried].  Does not modify
+      the attributes of the type. *)
+  val is_curried : Parsetree.core_type -> bool
+
+  (** Return all the attributes from the given list that were not added by
+      marking functions such as [mark_curried].  The same as accessing
+      [ptyp_attributes] if the type was not so marked. *)
+  val non_syntax_attributes : Parsetree.attributes -> Parsetree.attributes
+end
+
 (** The ASTs for locality modes *)
 module Local : sig
   type core_type = Ltyp_local of Parsetree.core_type
+  (** The other part of locality that shows up in types is the marking of what's
+      curried, as represented by the [Builtin.mark_curried] machinery, which
+      see. *)
 
   type constructor_argument = Lcarg_global of Parsetree.core_type
 

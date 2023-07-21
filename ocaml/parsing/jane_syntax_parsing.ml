@@ -4,7 +4,7 @@
     where each novel piece of syntax is represented using one of two embeddings:
 
     1. As an AST item carrying an attribute. The AST item serves as the "body"
-      of the syntax indicated by the attribute.
+       of the syntax indicated by the attribute.
     2. As a pair of an extension node and an AST item that serves as the "body".
        Here, the "pair" is embedded as a pair-like construct in the relevant AST
        category, e.g. [include sig [%jane.ERASABILITY.EXTNAME];; BODY end] for
@@ -14,7 +14,13 @@
     enabled by [-extension EXTNAME] on the command line), the attribute (if
     used) must be [[@jane.ERASABILITY.EXTNAME]], and the extension node (if
     used) must be [[%jane.ERASABILITY.EXTNAME]]. For built-in syntax, we use
-    [_builtin] instead of an language extension name.
+    [_builtin] instead of a language extension name.
+
+    The only exception to this is that for some built-in syntax, we instead use
+    certain "marker" attributes, designed to be created by the parser when a
+    full Jane-syntax encoding would be too heavyweight; for these, we use
+    [_marker] instead of an extension name, and allow arbitrary dot-separated
+    strings (see below) to follow it.
 
     The [ERASABILITY] component indicates to tools such as ocamlformat and
     ppxlib whether or not the attribute is erasable. See the documentation of
@@ -269,6 +275,16 @@ module Embedded_name : sig
       Not exposed. *)
   val of_string : string -> (t, Misnamed_embedding_error.t) result option
 
+  val marker_attribute_handler :
+    string list -> (loc:Location.t -> attribute)
+                 * (attributes -> attributes option)
+                 * (attributes -> bool)
+
+  (** Checks whether a name is a "marker attribute name", as created by
+      [marker_attribute_handler] (see the .mli file).  Used to avoid trying to
+      desguar them as normal Jane syntax.  Not exposed. *)
+  val is_marker : t -> bool
+
   (** Print out the embedded form of a Jane-syntax name, in quotes; for use in
       error messages. *)
   val pp_quoted_name : Format.formatter -> t -> unit
@@ -332,6 +348,37 @@ end = struct
          end
       end
     | _ :: _ | [] -> None
+
+  let marker_component = "_marker"
+
+  let marker_attribute_handler components =
+    let t =
+      { erasability = Erasable; components = marker_component :: components }
+    in
+    let make ~loc =
+      let loc = Location.ghostify loc in
+      Ast_helper.Attr.mk ~loc (Location.mkloc (to_string t) loc) (PStr [])
+    in
+    let is_t = function
+      | { attr_name = { txt = name; loc = _ }
+        ; attr_payload = PStr []
+        ; attr_loc = _ } ->
+        String.equal (to_string t) name
+      | _ -> false
+    in
+    let extract attrs =
+      attrs |>
+      Misc.find_map_last_and_split
+        ~f:(fun attr -> if is_t attr then Some () else None) |>
+      Option.map (fun (pre, (), post) -> pre @ post)
+    in
+    let has = List.exists is_t in
+    make, extract, has
+
+  let is_marker = function
+    | { erasability = Erasable; components = feature :: _ } ->
+      String.equal feature marker_component
+    | _ -> false
 
   let pp_quoted_name ppf t = Format.fprintf ppf "\"%s\"" (to_string t)
 
@@ -508,6 +555,7 @@ end
 let parse_embedding_exn ~loc ~payload ~name ~embedding_syntax =
   let raise_error err = raise (Error (loc, err)) in
   match Embedded_name.of_string name with
+  | Some (Ok name) when Embedded_name.is_marker name -> None
   | Some (Ok name) -> begin
       let raise_malformed err =
         raise_error (Malformed_embedding (embedding_syntax, name, err))

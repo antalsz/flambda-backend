@@ -112,16 +112,10 @@ let protect_longident ppf print_longident longprefix txt =
     else "%a.(%s)" in
   fprintf ppf format print_longident longprefix txt
 
-let is_curry_attr attr =
-  match attr.attr_name.txt with
-  | "extension.curry" -> true
-  | _ -> false
-
-let filter_curry_attrs attrs =
-  List.filter (fun attr -> not (is_curry_attr attr)) attrs
-
-let has_non_curry_attr attrs =
-  List.exists (fun attr -> not (is_curry_attr attr)) attrs
+let has_non_syntax_attr attrs =
+  match Jane_syntax.Builtin.non_syntax_attributes attrs with
+  | [] -> false
+  | _ :: _ -> true
 
 type space_formatter = (unit, Format.formatter, unit) format
 
@@ -309,13 +303,15 @@ and type_with_label ctxt f (label, c) =
 and core_type ctxt f x =
   match Jane_syntax.Core_type.of_ast x with
   | Some (jtyp, attrs) ->
-      let filtered_attrs = filter_curry_attrs attrs in
+      let filtered_attrs = Jane_syntax.Builtin.non_syntax_attributes attrs in
       if filtered_attrs <> [] then
         pp f "((%a)%a)" (core_type ctxt) x (attributes ctxt) filtered_attrs
       else
         core_type_jane_syntax ctxt f jtyp
   | None ->
-  let filtered_attrs = filter_curry_attrs x.ptyp_attributes in
+  let filtered_attrs =
+    Jane_syntax.Builtin.non_syntax_attributes x.ptyp_attributes
+  in
   if filtered_attrs <> [] then begin
     pp f "((%a)%a)" (core_type ctxt) {x with ptyp_attributes=[]}
       (attributes ctxt) filtered_attrs
@@ -342,11 +338,11 @@ and core_type ctxt f x =
 and core_type1 ctxt f x =
   match Jane_syntax.Core_type.of_ast x with
   | Some (jtyp, attrs) ->
-    if has_non_curry_attr attrs
+    if has_non_syntax_attr attrs
     then core_type ctxt f x
     else core_type1_jane_syntax ctxt f jtyp
   | None ->
-  if has_non_curry_attr x.ptyp_attributes then core_type ctxt f x
+  if has_non_syntax_attr x.ptyp_attributes then core_type ctxt f x
   else match x.ptyp_desc with
     | Ptyp_any -> pp f "_";
     | Ptyp_var s -> tyvar f  s;

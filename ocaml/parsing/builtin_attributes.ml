@@ -95,9 +95,9 @@ let builtin_attrs =
   ; "flambda_o3"; "ocaml.flambda_o3"
   ; "afl_inst_ratio"; "ocaml.afl_inst_ratio"
   ; "local_opt"; "ocaml.local_opt"
-  ; "curry"; "ocaml.curry"; "extension.curry"
-  ; "nontail"; "ocaml.nontail"
-  ; "tail"; "ocaml.tail"
+  ; "curry"; "ocaml.curry" (* For [-extension local] *)
+  ; "nontail"; "ocaml.nontail" (* For [-extension local] *)
+  ; "tail"; "ocaml.tail" (* For [-extension local] *)
   ; "noalloc"; "ocaml.noalloc"
   ; "zero_alloc"; "ocaml.zero_alloc"
   ; "untagged"; "ocaml.untagged"
@@ -611,8 +611,8 @@ let parse_standard_implementation_attributes attr =
 let has_local_opt attrs =
   has_attribute ["ocaml.local_opt"; "local_opt"] attrs
 
-let has_curry attrs =
-  has_attribute ["extension.curry"; "ocaml.curry"; "curry"] attrs
+let is_explicitly_curried attrs =
+  has_attribute ["ocaml.curry"; "curry"] attrs
 
 let tailcall attr =
   let has_nontail = has_attribute ["ocaml.nontail"; "nontail"] attr in

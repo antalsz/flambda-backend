@@ -3567,7 +3567,7 @@ let is_local_returning_expr e =
   local
 
 let rec is_an_uncurried_function e =
-  if Builtin_attributes.has_curry e.pexp_attributes then false
+  if Builtin_attributes.is_explicitly_curried e.pexp_attributes then false
   else begin
     match e.pexp_desc, e.pexp_attributes with
     | (Pexp_fun _ | Pexp_function _), _ -> true
@@ -3590,7 +3590,7 @@ let is_local_returning_function cases =
     | cases ->
         List.for_all (fun case -> is_local_returning_expr case.pc_rhs) cases
   and loop_body e =
-    if Builtin_attributes.has_curry e.pexp_attributes then
+    if Builtin_attributes.is_explicitly_curried e.pexp_attributes then
       is_local_returning_expr e
     else begin
       match e.pexp_desc, e.pexp_attributes with
@@ -3763,6 +3763,7 @@ and type_approx_aux env sexp in_function ty_expected =
   | Pexp_apply
       ({ pexp_desc = Pexp_extension({txt = "extension.escape"}, PStr []) },
        [Nolabel, e]) ->
+    (* See Note [extension.escape] *)
     type_approx_aux env e None ty_expected
   | _ -> ()
 
@@ -4418,9 +4419,20 @@ and type_expect_
           (Pat.construct ~loc:default_loc
              (mknoloc (Longident.(Ldot (Lident "*predef*", "None"))))
              None)
+          (* See Note [extension.escape] *)
           (Exp.apply ~loc:default_loc
              (Exp.extension (mknoloc "extension.escape", PStr []))
              [Nolabel, default]);
+
+          (* Note [extension.escape]
+             ~~~~~~~~~~~~~~~~~~~~~~~
+
+             [[%extension.escape]] is the last remnant of old-style syntax
+             extension encodings present in the compiler.  I (antalsz) expect it
+             to be removed by nroberts's (@ncik-roberts's) forthcoming syntactic
+             function arity parsing patch; if you're reading this in 2024 and
+             [[%extension.escape]] is still present, convert it into
+             [Lexp_escape] like the existing [Lexp_local] and [Lexp_exclave]. *)
        ]
       in
       let sloc =
@@ -4462,6 +4474,7 @@ and type_expect_
   | Pexp_apply
       ({ pexp_desc = Pexp_extension({txt = "extension.escape"}, PStr []) },
        [Nolabel, sbody]) ->
+      (* See Note [extension.escape] *)
       let exp =
         type_expect ?in_function ~recarg env mode_global sbody
           ty_expected_explained
