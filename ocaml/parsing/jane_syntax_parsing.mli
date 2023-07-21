@@ -178,7 +178,8 @@ module type AST = sig
   (** Embed a term from one of our novel syntactic features in the AST using the
       given name (in the [Feature.t]) and body (the [ast]).  Any locations in
       the generated AST will be set to [!Ast_helper.default_loc], which should
-      be [ghost]. *)
+      be [ghost].  The list of components should be nonempty; if it's empty, you
+      probably want [make_entire_jane_syntax] instead. *)
   val make_jane_syntax
     :  Feature.t
     -> string list
@@ -198,7 +199,28 @@ module type AST = sig
     -> (unit -> ast)
     -> ast
 
-  (** XXX ASZ DOCUMENT ME *)
+  (** Given a *nested* term from one of our novel syntactic features that has
+      *already* been embedded in the AST by [make_jane_syntax], matches on the
+      name and AST of that embedding to lift it back to the Jane syntax AST.  By
+      "nested", this means the term ought to be a subcomponent of a
+      [make_entire_jane_syntax]-created term, created specifically by
+      [make_jane_syntax] with a nonempty list of components.
+
+      For example, to distinguish between the different terms in the
+      [-extension local] expression AST, we write:
+
+      {[
+        let of_expr =
+          Expression.match_jane_syntax_piece feature @@ fun expr -> function
+          | ["local"] ->
+            Expression.match_dummy expr |>
+            Option.map (fun expr' -> Lexp_local expr')
+          | ["exclave"] ->
+            Expression.match_dummy expr |>
+            Option.map (fun expr' -> Lexp_exclave expr')
+          | _ -> None
+      ]}
+  *)
   val match_jane_syntax_piece
     : Feature.t -> (ast -> string list -> 'a option) -> ast -> 'a
 
