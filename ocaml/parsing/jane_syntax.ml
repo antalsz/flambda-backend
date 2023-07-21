@@ -227,24 +227,24 @@ module Comprehensions = struct
     | When cond ->
         comprehension_expr ["when"] (Ast_helper.Exp.sequence cond rest)
 
-  let expr_of_comprehension ~type_ { body; clauses } =
+  let expr_of_comprehension ~type_ ~attrs { body; clauses } =
     (* See Note [Wrapping with Pexp_lazy] *)
     comprehension_expr
       type_
-      (Ast_helper.Exp.lazy_
-        (List.fold_right
-          expr_of_clause
-          clauses
-          (comprehension_expr ["body"] (Ast_helper.Exp.lazy_ body))))
+      (Expression.add_attributes
+         attrs
+         (Ast_helper.Exp.lazy_
+            (List.fold_right
+               expr_of_clause
+               clauses
+               (comprehension_expr ["body"] (Ast_helper.Exp.lazy_ body)))))
 
   let expr_of ~loc ~attrs cexpr =
     (* See Note [Wrapping with make_entire_jane_syntax] *)
     Expression.make_entire_jane_syntax ~loc feature (fun () ->
-      (* XXX ASZ ordering *)
-      Expression.add_attributes attrs @@
       match cexpr with
       | Cexp_list_comprehension comp ->
-          expr_of_comprehension ~type_:["list"] comp
+          expr_of_comprehension ~type_:["list"] ~attrs comp
       | Cexp_array_comprehension (amut, comp) ->
           expr_of_comprehension
             ~type_:[ "array"
@@ -252,6 +252,7 @@ module Comprehensions = struct
                      | Mutable   -> "mutable"
                      | Immutable -> "immutable"
                    ]
+            ~attrs
             comp)
 
   (** Then, we define how to go from the OCaml AST to the nice AST; this is
