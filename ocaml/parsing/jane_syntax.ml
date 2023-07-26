@@ -109,17 +109,13 @@ module Local = struct
     | Lexp_local expr ->
       (* See Note [Wrapping with make_entire_jane_syntax] *)
       Expression.make_entire_jane_syntax ~loc feature (fun () ->
-        (* We encode [local_ e] with an extra "dummy" wrapper to get a place to
-           hang the outer location. *)
         Expression.make_jane_syntax feature ["local"] @@
-        Expression.make_dummy ~attrs expr)
+        Expression.add_attributes attrs expr)
     | Lexp_exclave expr ->
       (* See Note [Wrapping with make_entire_jane_syntax] *)
       Expression.make_entire_jane_syntax ~loc feature (fun () ->
-        (* We encode [exclave_ e] with an extra "dummy" wrapper to get a place to
-           hang the outer location. *)
         Expression.make_jane_syntax feature ["exclave"] @@
-        Expression.make_dummy ~attrs expr)
+        Expression.add_attributes attrs expr)
     | Lexp_constrain_local expr ->
       (* See Note [Wrapping with make_entire_jane_syntax] *)
       Expression.make_entire_jane_syntax ~loc feature (fun () ->
@@ -128,12 +124,8 @@ module Local = struct
 
   let of_expr =
     Expression.match_jane_syntax_piece feature @@ fun expr -> function
-      | ["local"] ->
-        Expression.match_dummy expr |>
-        Option.map (fun expr' -> Lexp_local expr')
-      | ["exclave"] ->
-        Expression.match_dummy expr |>
-        Option.map (fun expr' -> Lexp_exclave expr')
+      | ["local"] -> Some (Lexp_local expr)
+      | ["exclave"] -> Some (Lexp_exclave expr)
       | ["constrain_local"] -> Some (Lexp_constrain_local expr)
       | _ -> None
 

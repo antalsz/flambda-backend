@@ -3528,12 +3528,12 @@ let is_local_returning_expr e =
     | Some (jexp, _attrs) -> begin match jexp with
         | Jexp_local (Lexp_local _) ->
             true, e.pexp_loc
-        | Jexp_local (Lexp_constrain_local e) ->
-            loop e
         | Jexp_local (Lexp_exclave _)
         | Jexp_comprehension _ | Jexp_immutable_array _
         | Jexp_unboxed_constant _ ->
             false, e.pexp_loc
+        | Jexp_local (Lexp_constrain_local e) ->
+            loop e
       end
     | None      ->
     match e.pexp_desc with
@@ -3569,6 +3569,16 @@ let is_local_returning_expr e =
 let rec is_an_uncurried_function e =
   if Builtin_attributes.is_explicitly_curried e.pexp_attributes then false
   else begin
+    match Jane_syntax.Expression.of_ast e with
+    | Some (jexp, _attrs) -> begin match jexp with
+        | Jexp_local (Lexp_local e | Lexp_constrain_local e) ->
+            is_an_uncurried_function e
+        | Jexp_local (Lexp_exclave _)
+        | Jexp_comprehension _ | Jexp_immutable_array _
+        | Jexp_unboxed_constant _ ->
+            false
+      end
+    | None ->
     match e.pexp_desc, e.pexp_attributes with
     | (Pexp_fun _ | Pexp_function _), _ -> true
     | Pexp_poly (e, _), _
@@ -7008,12 +7018,9 @@ and type_let
     | Pexp_newtype (_, e) -> sexp_is_fun e
     | _ -> false
   and jexp_is_fun : Jane_syntax.Expression.t -> _ = function
-    | Jexp_local (Lexp_local e) ->
+    | Jexp_local (Lexp_local e | Lexp_constrain_local e) ->
         sexp_is_fun e
-    | Jexp_local (Lexp_exclave e) ->
-        sexp_is_fun e
-    | Jexp_local (Lexp_constrain_local e) ->
-        sexp_is_fun e
+    | Jexp_local (Lexp_exclave _)
     | Jexp_comprehension ( Cexp_list_comprehension  _
                          | Cexp_array_comprehension _)
     | Jexp_immutable_array (Iaexp_immutable_array _)
@@ -7786,7 +7793,8 @@ let type_expression env layout sexp =
   end_def();
   if maybe_expansive exp then lower_contravariant env exp.exp_type;
   generalize exp.exp_type;
-  match sexp.pexp_desc with
+  match Jane_syntax.Expression.of_ast sexp, sexp.pexp_desc with
+  | None,
     Pexp_ident lid ->
       let loc = sexp.pexp_loc in
       (* Special case for keeping type variables when looking-up a variable *)

@@ -18,10 +18,4 @@
    like it in separate files, because the "compile and test output"
    infrastructure reports only one error at a time. *)
 
-(* This exception is no longer raisable directly, due to the requirement for
-   [_location] attributes whose locations are themselves ghost. *)
-let _former__disabled_extension =
-  ()
-  [@jane.non_erasable.comprehensions._location._nonghost]
-  [@jane.non_erasable.comprehensions]
-;;
+let _missing_location_attribute = () [@jane.erasable.extension_doesn't_matter];;

@@ -1,0 +1,5 @@
+File "user_error8.ml", line 21, characters 34-36:
+21 | let _missing_location_attribute = () [@jane.erasable.extension_doesn't_matter];;
+                                       ^^
+Error: All attribute embeddings are expected to contain a location attribute,
+       but one was missing here.
