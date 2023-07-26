@@ -52,7 +52,8 @@ module Local : sig
   type core_type = Ltyp_local of Parsetree.core_type
   (** [local_ TYPE]
 
-      Invariant: Only used in arrow types (e.g., [local_ a -> local_ b]).
+      Invariant: Only used in arrow types (e.g., [local_ a -> local_ b]), and
+      has no attributes (the inner [core_type] can).
 
       The other part of locality that shows up in types is the marking of what's
       curried (i.e., represented with explicit parentheses in the source); this
