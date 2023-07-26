@@ -60,9 +60,13 @@ let iterator =
   in
   let typ self ty =
     begin match ty.ptyp_desc with
-    | Ptyp_arrow (_lab, ty1, ty2) ->
-        super.typ self (typ_allow_local self ty1);
-        super.typ self (typ_allow_local self ty2)
+    | Ptyp_arrow (lab, ty1, ty2) ->
+        let without_locals =
+          Ptyp_arrow(lab,
+                     typ_allow_local self ty1,
+                     typ_allow_local self ty2)
+        in
+        super.typ self { ty with ptyp_desc = without_locals }
     | _ ->
         super.typ self ty
     end;

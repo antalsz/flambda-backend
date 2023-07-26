@@ -50,7 +50,7 @@ end
 (** The ASTs for locality modes *)
 module Local : sig
   type core_type = Ltyp_local of Parsetree.core_type
-  (** local_ TYPE
+  (** [local_ TYPE]
 
       Invariant: Only used in arrow types (e.g., [local_ a -> local_ b]).
 
@@ -60,16 +60,16 @@ module Local : sig
 
   type constructor_argument =
     | Lcarg_global of Parsetree.core_type
-    (** global_ TYPE
+    (** [global_ TYPE]
 
         E.g.: [type t = { x : global_ string }] or
         [type t = C of global_ string]. *)
 
   type expression =
     | Lexp_local of Parsetree.expression
-    (** local_ EXPR *)
+    (** [local_ EXPR] *)
     | Lexp_exclave of Parsetree.expression
-    (** exclave_ EXPR *)
+    (** [exclave_ EXPR] *)
     | Lexp_constrain_local of Parsetree.expression
     (** This represents the shadow [local_] that is inserted on the RHS of a
         [let local_ f : t = e in ...] binding.
@@ -84,7 +84,7 @@ module Local : sig
 
   type pattern =
     | Lpat_local of Parsetree.pattern
-    (** local_ PAT
+    (** [local_ PAT]
 
         Invariant: [Lpat_local] is always the outermost part of a pattern. *)
 
@@ -108,23 +108,23 @@ module Comprehensions : sig
     | Range of { start     : Parsetree.expression
                ; stop      : Parsetree.expression
                ; direction : Asttypes.direction_flag }
-    (** "= START to STOP" (direction = Upto)
-        "= START downto STOP" (direction = Downto) *)
+    (** [= START to STOP] (direction = [Upto])
+        [= START downto STOP] (direction = [Downto]) *)
     | In of Parsetree.expression
-    (** "in EXPR" *)
+    (** [in EXPR] *)
 
   (* In [Typedtree], the [pattern] moves into the [iterator]. *)
   type clause_binding =
     { pattern    : Parsetree.pattern
     ; iterator   : iterator
     ; attributes : Parsetree.attribute list }
-    (** [@...] PAT (in/=) ... *)
+    (** [[@...] PAT (in/=) ...] *)
 
   type clause =
     | For of clause_binding list
-    (** "for PAT (in/=) ... and PAT (in/=) ... and ..."; must be nonempty *)
+    (** [for PAT (in/=) ... and PAT (in/=) ... and ...]; must be nonempty *)
     | When of Parsetree.expression
-    (** "when EXPR" *)
+    (** [when EXPR] *)
 
   type comprehension =
     { body : Parsetree.expression
@@ -134,10 +134,10 @@ module Comprehensions : sig
 
   type expression =
     | Cexp_list_comprehension  of comprehension
-    (** [BODY ...CLAUSES...] *)
+    (** [[BODY ...CLAUSES...]] *)
     | Cexp_array_comprehension of Asttypes.mutable_flag * comprehension
-    (** [|BODY ...CLAUSES...|] (flag = Mutable)
-        [:BODY ...CLAUSES...:] (flag = Immutable)
+    (** [[|BODY ...CLAUSES...|]] (flag = [Mutable])
+        [[:BODY ...CLAUSES...:]] (flag = [Immutable])
           (only allowed with [-extension immutable_arrays]) *)
 
   val expr_of :
@@ -151,11 +151,11 @@ end
 module Immutable_arrays : sig
   type expression =
     | Iaexp_immutable_array of Parsetree.expression list
-    (** [: E1; ...; En :] *)
+    (** [[: E1; ...; En :]] *)
 
   type pattern =
     | Iapat_immutable_array of Parsetree.pattern list
-    (** [: P1; ...; Pn :] **)
+    (** [[: P1; ...; Pn :]] **)
 
   val expr_of :
     loc:Location.t -> attrs:Parsetree.attributes ->
@@ -171,9 +171,11 @@ end
 module Include_functor : sig
   type signature_item =
     | Ifsig_include_functor of Parsetree.include_description
+    (** [include functor MTY] *)
 
   type structure_item =
     | Ifstr_include_functor of Parsetree.include_declaration
+    (** [include functor MOD] *)
 
   val sig_item_of : loc:Location.t -> signature_item -> Parsetree.signature_item
   val str_item_of : loc:Location.t -> structure_item -> Parsetree.structure_item
@@ -193,7 +195,20 @@ end
 module Unboxed_constants : sig
   type t =
     | Float of string * char option
+    (** Unboxed float constants such as [3.4#], [-2e5#], or [+1.4e-4#g].
+
+        Unlike with boxed constants, the sign (if present) is included.
+
+        Suffixes [g-z][G-Z] are accepted by the parser.
+        Suffixes are rejected by the typechecker. *)
     | Integer of string * char
+    (** Unboxed float constants such as [3#], [-3#l], [+3#L], or [3#n].
+
+        Unlike with boxed constants, the sign (if present) is included.
+
+        Suffixes [g-z][G-Z] are *required* by the parser.
+        Suffixes except ['l'], ['L'] and ['n'] are rejected by the typechecker.
+    *)
 
   type expression = t
   type pattern = t
