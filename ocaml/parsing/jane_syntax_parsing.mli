@@ -298,7 +298,7 @@ module Core_type :
   AST_with_attributes with type ast = Parsetree.core_type
 
 module Constructor_argument :
-  AST_with_attributes with type ast = Parsetree.core_type
+  AST_without_attributes with type ast = Parsetree.core_type
 
 module Extension_constructor :
   AST_with_attributes with type ast = Parsetree.extension_constructor

@@ -190,9 +190,8 @@ module T = struct
 
   let iter_constructor_argument sub carg =
     match Jane_syntax.Constructor_argument.of_ast carg with
-    | Some (jcarg, attrs) ->
+    | Some jcarg ->
         sub.location sub carg.ptyp_loc;
-        sub.attributes sub attrs;
         sub.constructor_argument_jane_syntax sub jcarg
     | None ->
         sub.typ sub carg

@@ -135,7 +135,7 @@ let add_opt add_fn bv = function
 
 let add_constructor_argument bv ty =
   match Jane_syntax.Constructor_argument.of_ast ty with
-  | Some (jcarg, _attrs) -> begin
+  | Some jcarg -> begin
       match jcarg with
       | Jcarg_local (Lcarg_global ty) ->
           add_type bv ty

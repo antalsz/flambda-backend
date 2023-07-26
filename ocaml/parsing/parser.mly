@@ -173,8 +173,7 @@ let local_if : type ast. ast Local_syntax_category.t -> _ -> _ -> ast -> ast =
 let global_if global_flag sloc carg =
   match global_flag with
   | Global ->
-      Jane_syntax.Local.constr_arg_of ~loc:(make_loc sloc) ~attrs:[]
-        (Lcarg_global carg)
+      Jane_syntax.Local.constr_arg_of ~loc:(make_loc sloc) (Lcarg_global carg)
   | Nothing ->
       carg
 

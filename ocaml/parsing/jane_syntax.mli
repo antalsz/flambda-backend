@@ -92,8 +92,7 @@ module Local : sig
     loc:Location.t -> attrs:Parsetree.attributes ->
     core_type -> Parsetree.core_type
   val constr_arg_of :
-    loc:Location.t -> attrs:Parsetree.attributes ->
-    constructor_argument -> Parsetree.core_type
+    loc:Location.t -> constructor_argument -> Parsetree.core_type
   val expr_of :
     loc:Location.t -> attrs:Parsetree.attributes ->
     expression -> Parsetree.expression
@@ -316,14 +315,16 @@ module Core_type : sig
      and type ast := Parsetree.core_type
 end
 
-(** Novel syntax in constructor arguments; this isn't a core AST type,
-    but captures where [global_] lives *)
+(** Novel syntax in constructor arguments; this isn't a core AST type, but
+    captures where [global_] lives.  Unlike types, they don't have attributes;
+    any attributes are either on the label declaration they're in (if any) or on
+    the inner type. *)
 module Constructor_argument : sig
   type t =
     | Jcarg_local of Local.constructor_argument
 
   include AST
-    with type t := t * Parsetree.attributes
+    with type t := t
      and type ast := Parsetree.core_type
 end
 

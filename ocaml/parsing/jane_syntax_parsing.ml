@@ -1049,5 +1049,15 @@ module Module_type = Make_attribute_ast(Module_type0)
 module Signature_item = Make_extension_ast(Signature_item0)
 module Structure_item = Make_extension_ast(Structure_item0)
 module Core_type = Make_attribute_ast(Core_type0)
-module Constructor_argument = Make_attribute_ast(Constructor_argument0)
 module Extension_constructor = Make_attribute_ast(Extension_constructor0)
+
+module Constructor_argument = struct
+  include Make_attribute_ast(Constructor_argument0)
+
+  let make_of_ast ~of_ast_internal ast =
+    match make_of_ast ~of_ast_internal ast with
+    | Some (jast, []) -> Some jast
+    | None -> None
+    | Some (_, _ :: _) ->
+      Misc.fatal_errorf "Constructor arguments should not have attributes"
+end

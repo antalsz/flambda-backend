@@ -1693,17 +1693,17 @@ and type_def_list ctxt f (rf, exported, l) =
 and record_declaration ctxt f lbls =
   let pld_mode_type_attrs pld =
     match Jane_syntax.Constructor_argument.of_ast pld.pld_type with
-    | Some (Jcarg_local (Lcarg_global carg), attrs) -> "global_ ", carg, attrs
-    | None -> "", pld.pld_type, pld.pld_attributes
+    | Some (Jcarg_local (Lcarg_global carg)) -> "global_ ", carg
+    | None -> "", pld.pld_type
   in
   let type_record_field f pld =
-    let mode_flag, pld_type, pld_attributes = pld_mode_type_attrs pld in
+    let mode_flag, pld_type = pld_mode_type_attrs pld in
     pp f "@[<2>%a%s%s:@;%a@;%a@]"
       mutable_flag pld.pld_mutable
       mode_flag
       pld.pld_name.txt
       (core_type ctxt) pld_type
-      (attributes ctxt) pld_attributes
+      (attributes ctxt) pld.pld_attributes
   in
   pp f "{@\n%a}"
     (list type_record_field ~sep:";@\n" )  lbls

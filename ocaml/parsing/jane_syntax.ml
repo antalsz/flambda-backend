@@ -89,7 +89,7 @@ module Local = struct
     | ["type"; "local"] -> Some (Ltyp_local typ)
     | _ -> None
 
-  let constr_arg_of ~loc ~attrs lcarg =
+  let constr_arg_of ~loc lcarg =
     (* See Note [Wrapping with make_entire_jane_syntax] *)
     Constructor_argument.make_entire_jane_syntax ~loc feature (fun () ->
       match lcarg with
@@ -97,8 +97,8 @@ module Local = struct
         (* Although there's only one constructor here, the use of [core_type]
            means we need to be able to tell the two uses apart *)
         Constructor_argument.make_jane_syntax
-          feature ["constructor_argument"; "global"] @@
-        Constructor_argument.add_attributes attrs carg)
+          feature ["constructor_argument"; "global"]
+          carg)
 
   let of_constr_arg =
     Constructor_argument.match_jane_syntax_piece feature @@ fun carg -> function
@@ -533,8 +533,8 @@ module Constructor_argument = struct
 
   let of_ast = Constructor_argument.make_of_ast ~of_ast_internal
 
-  let ast_of ~loc (jcarg, attrs) = match jcarg with
-    | Jcarg_local x -> Local.constr_arg_of ~loc ~attrs x
+  let ast_of ~loc jcarg = match jcarg with
+    | Jcarg_local x -> Local.constr_arg_of ~loc x
 end
 
 module Expression = struct

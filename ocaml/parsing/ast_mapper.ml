@@ -228,11 +228,10 @@ module T = struct
 
   let map_constructor_argument sub carg =
     match Jane_syntax.Constructor_argument.of_ast carg with
-    | Some (jcarg, attrs) ->
+    | Some jcarg ->
         let loc = sub.location sub carg.ptyp_loc in
-        let attrs = sub.attributes sub attrs in
         let jcarg = sub.constructor_argument_jane_syntax sub jcarg in
-        Jane_syntax.Constructor_argument.ast_of ~loc (jcarg, attrs)
+        Jane_syntax.Constructor_argument.ast_of ~loc jcarg
     | None ->
         sub.typ sub carg
 

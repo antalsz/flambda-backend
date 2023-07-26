@@ -373,8 +373,8 @@ let make_params env path params =
 
 let transl_global_flags arg =
   match Jane_syntax.Constructor_argument.of_ast arg with
-  | Some (Jcarg_local larg, attrs) -> begin match larg with
-    | Lcarg_global arg -> Types.Global, {arg with ptyp_attributes = attrs}
+  | Some (Jcarg_local larg) -> begin match larg with
+    | Lcarg_global arg -> Types.Global, arg
   end
   | None -> Types.Unrestricted, arg
 
@@ -1882,7 +1882,7 @@ let native_repr_of_type env kind ty =
     Some (Unboxed_integer Pint64)
   | Unboxed, Tconstr (path, _, _) when Path.same path Predef.path_nativeint ->
     Some (Unboxed_integer Pnativeint)
-  | Unboxed, Tconstr (path, _, _) when Path.same path Predef.path_vec128 -> 
+  | Unboxed, Tconstr (path, _, _) when Path.same path Predef.path_vec128 ->
     Some (Unboxed_vector Pvec128)
   | _ ->
     None
