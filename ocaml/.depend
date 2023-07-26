@@ -142,7 +142,6 @@ utils/language_extension_kernel.cmo : \
 utils/language_extension_kernel.cmx : \
     utils/language_extension_kernel.cmi
 utils/language_extension_kernel.cmi :
-utils/language_extension_kernel_intf.cmi :
 utils/lazy_backtrack.cmo : \
     utils/lazy_backtrack.cmi
 utils/lazy_backtrack.cmx : \
@@ -460,6 +459,7 @@ parsing/jane_syntax.cmi : \
     parsing/asttypes.cmi
 parsing/jane_syntax_parsing.cmo : \
     parsing/parsetree.cmi \
+    parsing/longident.cmi \
     parsing/location.cmi \
     utils/language_extension_kernel.cmi \
     utils/language_extension.cmi \
@@ -467,6 +467,7 @@ parsing/jane_syntax_parsing.cmo : \
     parsing/jane_syntax_parsing.cmi
 parsing/jane_syntax_parsing.cmx : \
     parsing/parsetree.cmi \
+    parsing/longident.cmx \
     parsing/location.cmx \
     utils/language_extension_kernel.cmx \
     utils/language_extension.cmx \
@@ -755,6 +756,7 @@ typing/env.cmo : \
     utils/local_store.cmi \
     utils/load_path.cmi \
     utils/lazy_backtrack.cmi \
+    utils/language_extension.cmi \
     typing/ident.cmi \
     typing/datarepr.cmi \
     utils/compilation_unit.cmi \
@@ -779,6 +781,7 @@ typing/env.cmx : \
     utils/local_store.cmx \
     utils/load_path.cmx \
     utils/lazy_backtrack.cmx \
+    utils/language_extension.cmx \
     typing/ident.cmx \
     typing/datarepr.cmx \
     utils/compilation_unit.cmx \

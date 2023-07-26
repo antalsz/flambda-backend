@@ -85,15 +85,36 @@
 
 open Parsetree
 
-(** We carefully regulate which bindings we import from [Language_extension]
-    to ensure that we can import this file into the Jane Street internal
-    repo with no changes.
+(** We carefully regulate which bindings we import from [Language_extension] to
+    ensure that we can import this file into places like ocamlformat or the Jane
+    Street internal repo with no changes.
 *)
 module Language_extension = struct
   include Language_extension_kernel
   include (
     Language_extension
       : Language_extension_kernel.Language_extension_for_jane_syntax)
+end
+
+(** For the same reason, we don't want this file to depend on [Misc] or similar
+    utility libraries, so we define any generic utility functionality in this
+    module. *)
+module Util : sig
+  val find_map_last_and_split :
+    f:('a -> 'b option) -> 'a list -> ('a list * 'b * 'a list) option
+          (* [find_map_last_and_split ~f l] returns a triple [pre, y, post] such
+             that [l = pre @ x @ post], [f x = Some y], and for all [x'] in
+             [post], [f x' = None].  If, for all [z] in [l], [f z = None], then
+             it returns [None]. *)
+end = struct
+  let find_map_last_and_split =
+    let rec go post ~f = function
+      | [] -> None
+      | x :: xs -> match f x with
+        | Some y -> Some (List.rev xs, y, post)
+        | None -> go (x :: post) ~f xs
+    in
+    fun ~f xs -> go [] ~f (List.rev xs)
 end
 
 (******************************************************************************)
@@ -368,7 +389,7 @@ end = struct
     in
     let extract attrs =
       attrs |>
-      Misc.find_map_last_and_split
+      Util.find_map_last_and_split
         ~f:(fun attr -> if is_t attr then Some () else None) |>
       Option.map (fun (pre, (), post) -> pre @ post)
     in
@@ -574,7 +595,7 @@ let parse_embedding_exn ~loc ~payload ~name ~embedding_syntax =
     one are first, and the attributes that come after are last; this last
     component is guaranteed not to have any Jane Syntax attributes in it. *)
 let find_and_remove_jane_syntax_attribute =
-  Misc.find_map_last_and_split
+  Util.find_map_last_and_split
     ~f:(fun { attr_name = { txt = name; loc }; attr_payload = payload } ->
           parse_embedding_exn ~loc ~payload ~name ~embedding_syntax:Attribute)
 

@@ -100,15 +100,6 @@ let rec last = function
   | [x] -> Some x
   | _ :: tl -> last tl
 
-let find_map_last_and_split =
-  let rec go post ~f = function
-    | [] -> None
-    | x :: xs -> match f x with
-      | Some y -> Some (List.rev xs, y, post)
-      | None -> go (x :: post) ~f xs
-  in
-  fun ~f xs -> go [] ~f (List.rev xs)
-
 module Stdlib = struct
   module List = struct
     include List

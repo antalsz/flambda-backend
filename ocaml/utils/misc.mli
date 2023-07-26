@@ -82,12 +82,6 @@ val split_last: 'a list -> 'a list * 'a
         (* Return the last element and the other elements of the given list. *)
 val last : 'a list -> 'a option
         (* Return the last element of a list if it's nonempty *)
-val find_map_last_and_split :
-  f:('a -> 'b option) -> 'a list -> ('a list * 'b * 'a list) option
-        (* [find_map_last_and_split ~f l] returns a triple [pre, y, post] such
-           that [l = pre @ x @ post], [f x = Some y], and for all [x'] in
-           [post], [f x' = None].  If, for all [z] in [l], [f z = None], then it
-           returns [None]. *)
 
 type ref_and_value = R : 'a ref * 'a -> ref_and_value
 
