@@ -317,6 +317,8 @@ and rewrite_exp_jane_syntax iflag : Jane_syntax.Expression.t -> _ = function
 
 and rewrite_local_exp iflag : Jane_syntax.Local.expression -> _ = function
   | Lexp_local exp -> rewrite_exp iflag exp
+  | Lexp_exclave exp -> rewrite_exp iflag exp
+  | Lexp_constrain_local exp -> rewrite_exp iflag exp
 
 and rewrite_comprehension_exp iflag :
   Jane_syntax.Comprehensions.expression -> _ = function
