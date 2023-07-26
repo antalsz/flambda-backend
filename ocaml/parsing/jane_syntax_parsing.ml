@@ -683,8 +683,8 @@ module Make_with_attribute
 
     let embedding_syntax = Embedding_syntax.Attribute
 
-    let make_attr (loc : Location.t) name =
-      let loc = { loc with loc_ghost = true } in
+    let make_attr loc name =
+      let loc = Location.ghostify loc in
       { attr_name = { txt = Embedded_name.to_string name; loc }
       ; attr_loc = loc
       ; attr_payload = PStr []
@@ -1029,7 +1029,7 @@ struct
   let make_entire_jane_syntax ~loc feature ast =
     AST.with_location
       (make_jane_syntax feature []
-         (Ast_helper.with_default_loc { loc with loc_ghost = true } ast))
+         (Ast_helper.with_default_loc (Location.ghostify loc) ast))
       loc
 
   (** Generically lift our custom ASTs for our novel syntax from OCaml ASTs. *)
