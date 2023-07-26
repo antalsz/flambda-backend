@@ -50,29 +50,43 @@ end
 (** The ASTs for locality modes *)
 module Local : sig
   type core_type = Ltyp_local of Parsetree.core_type
-  (** The other part of locality that shows up in types is the marking of what's
-      curried, as represented by the [Builtin.mark_curried] machinery, which
-      see. *)
+  (** local_ TYPE
 
-  type constructor_argument = Lcarg_global of Parsetree.core_type
+      Invariant: Only used in arrow types (e.g., [local_ a -> local_ b]).
+
+      The other part of locality that shows up in types is the marking of what's
+      curried (i.e., represented with explicit parentheses in the source); this
+      is represented by the [Builtin.mark_curried] machinery, which see. *)
+
+  type constructor_argument =
+    | Lcarg_global of Parsetree.core_type
+    (** global_ TYPE
+
+        E.g.: [type t = { x : global_ string }] or
+        [type t = C of global_ string]. *)
 
   type expression =
     | Lexp_local of Parsetree.expression
+    (** local_ EXPR *)
     | Lexp_exclave of Parsetree.expression
+    (** exclave_ EXPR *)
     | Lexp_constrain_local of Parsetree.expression
-      (** This represents the shadow [local_] that is inserted on the RHS of a
-          [let local_ f : t = e in ...] binding.
+    (** This represents the shadow [local_] that is inserted on the RHS of a
+        [let local_ f : t = e in ...] binding.
 
-          Invariant: [Lexp_constrain_local] occurs on the LHS of a
-          [Pexp_constraint] or [Pexp_coerce] node.
+        Invariant: [Lexp_constrain_local] occurs on the LHS of a
+        [Pexp_constraint] or [Pexp_coerce] node.
 
-          We don't inline the definition of [Pexp_constraint] or [Pexp_coerce]
-          here because nroberts's (@ncik-roberts's) forthcoming syntactic
-          function arity parsing patch handles this case more directly, and we
-          don't want to double the amount of work we're doing. *)
+        We don't inline the definition of [Pexp_constraint] or [Pexp_coerce]
+        here because nroberts's (@ncik-roberts's) forthcoming syntactic
+        function arity parsing patch handles this case more directly, and we
+        don't want to double the amount of work we're doing. *)
 
-  type pattern = Lpat_local of Parsetree.pattern
-  (** Invariant: [Lpat_local] is always the outermost part of a pattern. *)
+  type pattern =
+    | Lpat_local of Parsetree.pattern
+    (** local_ PAT
+
+        Invariant: [Lpat_local] is always the outermost part of a pattern. *)
 
   val type_of :
     loc:Location.t -> attrs:Parsetree.attributes ->
@@ -301,7 +315,7 @@ end
 (** Novel syntax in expressions *)
 module Expression : sig
   type t =
-    | Jexp_local           of Local.expression
+    | Jexp_local            of Local.expression
     | Jexp_comprehension    of Comprehensions.expression
     | Jexp_immutable_array  of Immutable_arrays.expression
     | Jexp_unboxed_constant of Unboxed_constants.expression

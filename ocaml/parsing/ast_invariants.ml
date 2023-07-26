@@ -27,6 +27,8 @@ let complex_id loc = err loc "Functor application not allowed here."
 let module_type_substitution_missing_rhs loc =
   err loc "Module type substitution with no right hand side"
 let empty_comprehension loc = err loc "Comprehension with no clauses"
+let misplaced_local loc =
+  err loc "\"local_\" cannot occur outside of an arrow type"
 
 let simple_longident id =
   let rec is_simple = function
@@ -45,9 +47,29 @@ let iterator =
     | Ptype_record [] -> empty_record loc
     | _ -> ()
   in
+  let jtyp _self loc (jty : Jane_syntax.Core_type.t) =
+    match jty with
+    | Jtyp_local (Ltyp_local _) -> misplaced_local loc
+  in
+  let typ_allow_local self ty =
+    match Jane_syntax.Core_type.of_ast ty with
+    | Some (Jtyp_local (Ltyp_local ty), attrs) ->
+        super.attributes self attrs;
+        ty
+    | None -> ty
+  in
   let typ self ty =
-    super.typ self ty;
+    begin match ty.ptyp_desc with
+    | Ptyp_arrow (_lab, ty1, ty2) ->
+        super.typ self (typ_allow_local self ty1);
+        super.typ self (typ_allow_local self ty2)
+    | _ ->
+        super.typ self ty
+    end;
     let loc = ty.ptyp_loc in
+    match Jane_syntax.Core_type.of_ast ty with
+    | Some (jty, _attrs) -> jtyp self ty.ptyp_loc jty
+    | None ->
     match ty.ptyp_desc with
     | Ptyp_tuple ([] | [_]) -> invalid_tuple loc
     | Ptyp_package (_, cstrs) ->
