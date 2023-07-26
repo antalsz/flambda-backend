@@ -30,9 +30,5 @@ type quiet_no_local = t -> unit
 
 type quiet_local = local_ (t[@alert "-deprecated"]) -> unit
 [%%expect{|
-Line 1, characters 27-28:
-1 | type quiet_local = local_ (t[@alert "-deprecated"]) -> unit
-                               ^
-Alert deprecated: t
 type quiet_local = local_ t -> unit
 |}]

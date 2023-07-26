@@ -61,6 +61,7 @@ type error =
   | Non_sort of
       {vloc : sort_loc; typ : type_expr; err : Layout.Violation.t}
   | Misplaced_local
+  | Local_type_has_attributes
 
 exception Error of Location.t * Env.t * error
 exception Error_forward of Location.error
@@ -397,23 +398,26 @@ let transl_type_param env styp layout =
   Builtin_attributes.warning_scope styp.ptyp_attributes
     (fun () -> transl_type_param env styp layout)
 
-let get_alloc_mode styp =
+let unwrap_mode env styp =
   match Jane_syntax.Core_type.of_ast styp with
-  | Some (Jtyp_local (Ltyp_local styp), attrs) ->
-      Alloc_mode.Local, {styp with ptyp_attributes = attrs}
+  | Some (Jtyp_local (Ltyp_local styp), []) -> Alloc_mode.Local, styp
   | None -> Alloc_mode.Global, styp
+  | Some (Jtyp_local (Ltyp_local _), _ :: _) ->
+      (* Unreachable without writing Jane-syntax directly; the parser won't
+         generate this *)
+      raise (Error(styp.ptyp_loc, env, Local_type_has_attributes))
 
-let rec extract_params styp =
+let rec extract_params env styp =
   let final styp =
-    let mode, styp = get_alloc_mode styp in
+    let mode, styp = unwrap_mode env styp in
     [], styp, mode
   in
   match styp.ptyp_desc with
   | Ptyp_arrow (l, a, r) ->
-      let arg_mode, a = get_alloc_mode a in
+      let arg_mode, a = unwrap_mode env a in
       let params, ret, ret_mode =
         if Jane_syntax.Builtin.is_curried r then final r
-        else extract_params r
+        else extract_params env r
       in
       (l, arg_mode, a) :: params, ret, ret_mode
   | _ -> final styp
@@ -461,7 +465,7 @@ and transl_type_aux env policy mode styp =
     in
     ctyp (Ttyp_var name) ty
   | Ptyp_arrow _ ->
-      let args, ret, ret_mode = extract_params styp in
+      let args, ret, ret_mode = extract_params env styp in
       let rec loop acc_mode args =
         match args with
         | (l, arg_mode, arg) :: rest ->
@@ -1147,6 +1151,10 @@ let report_error env ppf = function
       (* Unreachable without writing Jane-syntax directly; the parser won't
          generate this *)
       fprintf ppf "@[\"local_\" cannot occur outside of an arrow type@]"
+  | Local_type_has_attributes ->
+      (* Unreachable without writing Jane-syntax directly; the parser won't
+         generate this *)
+      fprintf ppf "@[\"local_ t\" cannot have attributes@]"
 
 let () =
   Location.register_error_of_exn

@@ -3615,7 +3615,7 @@ let rec approx_type env sty =
       (* CR layouts v5: value requirement here to be relaxed *)
       if is_optional p then newvar (Layout.value ~why:Type_argument)
       else begin
-        let arg_mode, arg_sty = Typetexp.get_alloc_mode arg_sty in
+        let arg_mode, arg_sty = Typetexp.unwrap_mode env arg_sty in
         let arg_ty =
           (* Polymorphic types will only unify with types that match all of their
            polymorphic parts, so we need to fully translate the type here
@@ -3628,8 +3628,10 @@ let rec approx_type env sty =
         newty (Tarrow ((p,marg,mret), arg_ty.ctyp_type, ret, commu_ok))
       end
   | Ptyp_arrow (p, arg_sty, sty) ->
-      let arg_mode, arg_sty = Typetexp.get_alloc_mode arg_sty in
-      let _ = arg_sty in (* We don't want to accidentally use the old one *)
+      let arg_mode, arg_sty = Typetexp.unwrap_mode env arg_sty in
+      (* We want to shadow the old [arg_sty], but not use the new one, so we
+         ignore it. *)
+      let _ = arg_sty in
       let arg =
         if is_optional p
         then type_option (newvar (Layout.value ~why:Type_argument))

@@ -29,6 +29,8 @@ let module_type_substitution_missing_rhs loc =
 let empty_comprehension loc = err loc "Comprehension with no clauses"
 let misplaced_local loc =
   err loc "\"local_\" cannot occur outside of an arrow type"
+let local_with_attributes loc =
+  err loc "\"local_ t\" cannot have attributes"
 
 let simple_longident id =
   let rec is_simple = function
@@ -51,20 +53,18 @@ let iterator =
     match jty with
     | Jtyp_local (Ltyp_local _) -> misplaced_local loc
   in
-  let typ_allow_local self ty =
+  let typ_allow_local ty =
     match Jane_syntax.Core_type.of_ast ty with
-    | Some (Jtyp_local (Ltyp_local ty), attrs) ->
-        super.attributes self attrs;
-        ty
+    | Some (Jtyp_local (Ltyp_local ty), []) -> ty
     | None -> ty
+    | Some (Jtyp_local (Ltyp_local _), _::_) ->
+        local_with_attributes ty.ptyp_loc
   in
   let typ self ty =
     begin match ty.ptyp_desc with
     | Ptyp_arrow (lab, ty1, ty2) ->
         let without_locals =
-          Ptyp_arrow(lab,
-                     typ_allow_local self ty1,
-                     typ_allow_local self ty2)
+          Ptyp_arrow(lab, typ_allow_local ty1, typ_allow_local ty2)
         in
         super.typ self { ty with ptyp_desc = without_locals }
     | _ ->

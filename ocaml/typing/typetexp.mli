@@ -64,8 +64,17 @@ val transl_type_scheme:
 val transl_type_param:
   Env.t -> Parsetree.core_type -> layout -> Typedtree.core_type
 
-val get_alloc_mode
-  : Parsetree.core_type -> alloc_mode_const * Parsetree.core_type
+(** Takes a type [t] and, if it's of the form [local_ t'], returns [t'].
+    Otherwise, returns [t].  The [alloc_mode_const] is [Local] if the type was
+    explicitly [local_] and [Global] otherwise.
+
+    We could effectively return a [Parsetree.core_type option], but we always
+    want the actual allocation mode and type, so this function preemtively
+    unpacks it.
+
+    The [Env.t] is only used for error reporting.*)
+val unwrap_mode
+  : Env.t -> Parsetree.core_type -> alloc_mode_const * Parsetree.core_type
 
 exception Already_bound
 
@@ -103,6 +112,7 @@ type error =
   | Non_sort of
       {vloc : sort_loc; typ : type_expr; err : Layout.Violation.t}
   | Misplaced_local
+  | Local_type_has_attributes
 
 exception Error of Location.t * Env.t * error
 
