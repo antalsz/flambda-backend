@@ -620,7 +620,6 @@ module Desugaring_error = struct
   type error =
     | Wrong_embedding of Embedded_name.t
     | Non_embedding
-    | Bad_embedding of string list
     | Unexpected_attributes of attributes
 
   exception Error of Location.t * Feature.t * error
@@ -639,13 +638,6 @@ module Desugaring_error = struct
       Location.errorf ~loc
         "Tried to desugar a non-embedded expression as part of a %a"
         report_term_for_feature feature
-    | Bad_embedding subparts ->
-      Location.errorf ~loc
-        "Unknown, unexpected, or malformed embedded %a at %a"
-        report_term_for_feature
-          feature
-        Embedded_name.pp_quoted_name
-          (Embedded_name.of_feature feature subparts)
     | Unexpected_attributes attrs ->
       Location.errorf ~loc
         "Non-Jane-syntax attributes were present \
@@ -974,8 +966,7 @@ module type AST = sig
   val make_jane_syntax : Feature.t -> string list -> ast -> ast
   val make_entire_jane_syntax :
     loc:Location.t -> Feature.t -> (unit -> ast) -> ast
-  val match_jane_syntax_piece :
-    Feature.t -> (ast -> string list -> 'a option) -> ast -> 'a
+  val match_jane_syntax_piece : Feature.t -> ast -> ast * string list
   val make_of_ast
     :  of_ast_internal:(Feature.t -> ast -> 'a option)
     -> (ast -> ('a with_attributes) option)
@@ -1060,7 +1051,7 @@ struct
     in
     of_ast
 
-  let match_jane_syntax_piece feature match_subparts ast =
+  let match_jane_syntax_piece feature ast =
     let raise_error err =
       raise (Desugaring_error.Error(location ast, feature, err))
     in
@@ -1074,20 +1065,16 @@ struct
         | extension_string :: subparts
           when String.equal
                  extension_string
-                 (Feature.extension_component feature) -> begin
-            match match_subparts ast' subparts with
-            | Some ext_ast -> ext_ast
-            | None -> raise_error (Bad_embedding subparts)
-          end
+                 (Feature.extension_component feature) -> ast', subparts
         | _ -> raise_error (Wrong_embedding embedded_name)
       end
     | None -> raise_error Non_embedding
 end
 
 module Make_extension_ast
-  :  functor (AST : AST_internal with type 'ast with_attributes := 'ast)
-  -> AST_without_attributes with type ast = AST.ast =
-  Make_ast (Uses_extensions)
+    (AST : AST_internal with type 'ast with_attributes := 'ast)
+  : AST_without_attributes with type ast = AST.ast =
+  Make_ast (Uses_extensions) (AST)
 
 module Make_attribute_ast (AST : AST_with_attributes_internal)
   : AST_with_attributes with type ast = AST.ast =

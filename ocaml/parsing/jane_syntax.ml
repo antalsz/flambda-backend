@@ -41,6 +41,13 @@ open Jane_syntax_parsing
    future syntax features to remember to do this wrapping.
 *)
 
+let fail_unknown_subparts ~loc ~feature ~subparts =
+  Location.raise_errorf ~loc
+    "Unexpected subparts \"%s\" of embedding %a."
+    (String.concat "." subparts)
+    Embedded_name.pp_quoted_name
+    (Embedded_name.of_feature feature subparts)
+
 module Builtin = struct
   let make_curry_attr, extract_curry_attr, has_curry_attr =
     Embedded_name.marker_attribute_handler ["curry"]
@@ -85,9 +92,11 @@ module Local = struct
         Core_type.make_jane_syntax feature ["type"; "local"] @@
         Core_type.add_attributes attrs typ)
 
-  let of_type = Core_type.match_jane_syntax_piece feature @@ fun typ -> function
-    | ["type"; "local"] -> Some (Ltyp_local typ)
-    | _ -> None
+  let of_type typ =
+    let typ, subparts = Core_type.match_jane_syntax_piece feature typ in
+    match subparts with
+    | ["type"; "local"] -> Ltyp_local typ
+    | _ -> fail_unknown_subparts ~loc:typ.ptyp_loc ~feature ~subparts
 
   let constr_arg_of ~loc lcarg =
     (* See Note [Wrapping with make_entire_jane_syntax] *)
@@ -100,10 +109,13 @@ module Local = struct
           feature ["constructor_argument"; "global"]
           carg)
 
-  let of_constr_arg =
-    Constructor_argument.match_jane_syntax_piece feature @@ fun carg -> function
-      | ["constructor_argument"; "global"] -> Some (Lcarg_global carg)
-      | _ -> None
+  let of_constr_arg carg =
+    let carg, subparts =
+      Constructor_argument.match_jane_syntax_piece feature carg
+    in
+    match subparts with
+    | ["constructor_argument"; "global"] -> Lcarg_global carg
+    | _ -> fail_unknown_subparts ~loc:carg.ptyp_loc ~subparts ~feature
 
   let expr_of ~loc ~attrs = function
     | Lexp_local expr ->
@@ -122,12 +134,13 @@ module Local = struct
         Expression.make_jane_syntax feature ["constrain_local"] @@
         Expression.add_attributes attrs expr)
 
-  let of_expr =
-    Expression.match_jane_syntax_piece feature @@ fun expr -> function
-      | ["local"] -> Some (Lexp_local expr)
-      | ["exclave"] -> Some (Lexp_exclave expr)
-      | ["constrain_local"] -> Some (Lexp_constrain_local expr)
-      | _ -> None
+  let of_expr expr =
+    let expr, subparts = Expression.match_jane_syntax_piece feature expr in
+    match subparts with
+    | ["local"] -> Lexp_local expr
+    | ["exclave"] -> Lexp_exclave expr
+    | ["constrain_local"] -> Lexp_constrain_local expr
+    | subparts -> fail_unknown_subparts ~feature ~subparts ~loc:expr.pexp_loc
 
   let pat_of ~loc ~attrs = function
     | Lpat_local pat ->
@@ -288,22 +301,23 @@ module Comprehensions = struct
     let raise expr err = raise (Error(expr.pexp_loc, err))
   end
 
-  let match_comprehension_piece matcher =
-    Expression.match_jane_syntax_piece feature @@ fun expr subparts ->
-      match expr.pexp_attributes with
-      | [] -> matcher expr subparts
-      | _ :: _ as attrs ->
-        Desugaring_error.raise expr (Unexpected_attributes attrs)
+  let match_comprehension_piece expr =
+    let expr, subparts = Expression.match_jane_syntax_piece feature expr in
+    match expr.pexp_attributes with
+    | [] -> expr, subparts
+    | _ :: _ as attrs ->
+      Desugaring_error.raise expr (Unexpected_attributes attrs)
 
-  let iterator_of_expr = match_comprehension_piece @@ fun expr subparts ->
+  let iterator_of_expr expr =
+    let expr, subparts = match_comprehension_piece expr in
     match subparts, expr.pexp_desc with
-    |["for"; "range"; "upto"], Pexp_tuple [start; stop] ->
-        Some (Range { start; stop; direction = Upto })
+    | ["for"; "range"; "upto"], Pexp_tuple [start; stop] ->
+        Range { start; stop; direction = Upto }
     | ["for"; "range"; "downto"], Pexp_tuple [start; stop] ->
-        Some (Range { start; stop; direction = Downto })
+        Range { start; stop; direction = Downto }
     | ["for"; "in"], Pexp_lazy seq ->
-        Some (In seq)
-    | _ -> None
+        In seq
+    | subparts, _ -> fail_unknown_subparts ~feature ~subparts ~loc:expr.pexp_loc
 
   let clause_binding_of_vb { pvb_pat; pvb_expr; pvb_attributes; pvb_loc = _ } =
     { pattern = pvb_pat
@@ -314,20 +328,20 @@ module Comprehensions = struct
 
   let comprehension_of_expr =
     let rec raw_comprehension_of_expr expr =
-      expr |> match_comprehension_piece @@ fun expr subparts ->
-        match subparts, expr.pexp_desc with
-        | ["for"], Pexp_let(Nonrecursive, iterators, rest) ->
-            Option.some @@ add_clause
-              (For (List.map clause_binding_of_vb iterators))
-              (raw_comprehension_of_expr rest)
-        | ["when"], Pexp_sequence(cond, rest) ->
-            Option.some @@ add_clause
-              (When cond)
-              (raw_comprehension_of_expr rest)
-        | ["body"], Pexp_lazy body ->
-            Some { body; clauses = [] }
-        | _ ->
-            None
+      let expr, subparts = match_comprehension_piece expr in
+      match subparts, expr.pexp_desc with
+      | ["for"], Pexp_let(Nonrecursive, iterators, rest) ->
+          add_clause
+            (For (List.map clause_binding_of_vb iterators))
+            (raw_comprehension_of_expr rest)
+      | ["when"], Pexp_sequence(cond, rest) ->
+          add_clause
+            (When cond)
+            (raw_comprehension_of_expr rest)
+      | ["body"], Pexp_lazy body ->
+          { body; clauses = [] }
+      | subparts, _ ->
+          fail_unknown_subparts ~feature ~subparts ~loc:expr.pexp_loc
     in
     fun expr ->
       match raw_comprehension_of_expr expr with
@@ -335,22 +349,23 @@ module Comprehensions = struct
           Desugaring_error.raise expr No_clauses
       | comp -> comp
 
-  let of_expr = match_comprehension_piece @@ fun expr subparts ->
+  let of_expr expr =
+    let expr, subparts = match_comprehension_piece expr in
     (* See Note [Wrapping with Pexp_lazy] *)
     match subparts, expr.pexp_desc with
     | ["list"], Pexp_lazy comp ->
-      Some (Cexp_list_comprehension (comprehension_of_expr comp))
+        Cexp_list_comprehension (comprehension_of_expr comp)
     | ["array"; "mutable"], Pexp_lazy comp ->
-      Some (Cexp_array_comprehension (Mutable,
-                                      comprehension_of_expr comp))
+        Cexp_array_comprehension (Mutable,
+                                  comprehension_of_expr comp)
     | ["array"; "immutable"], Pexp_lazy comp ->
       (* assert_extension_enabled:
          See Note [Check for immutable extension in comprehensions code]
       *)
       assert_extension_enabled ~loc:expr.pexp_loc Immutable_arrays ();
-      Some (Cexp_array_comprehension (Immutable,
-                                      comprehension_of_expr comp))
-    | _ -> None
+      Cexp_array_comprehension (Immutable,
+                                      comprehension_of_expr comp)
+    | subparts, _ -> fail_unknown_subparts ~feature ~subparts ~loc:expr.pexp_loc
 end
 
 (** Immutable arrays *)

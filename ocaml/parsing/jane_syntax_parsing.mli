@@ -199,6 +199,11 @@ module type AST = sig
     -> (unit -> ast)
     -> ast
 
+  (* CR nroberts: if we go with this change, we should update this comment. *)
+  (* CR nroberts: Maybe it should be called just [match_jane_syntax] to more
+     strongly suggest that it is inverse to [make_jane_syntax]? Maybe the comment
+     should more clearly say that it is inverse?
+  *)
   (** Given a *nested* term from one of our novel syntactic features that has
       *already* been embedded in the AST by [make_jane_syntax], matches on the
       name and AST of that embedding to lift it back to the Jane syntax AST.  By
@@ -217,8 +222,7 @@ module type AST = sig
           | _ -> None
       ]}
   *)
-  val match_jane_syntax_piece
-    : Feature.t -> (ast -> string list -> 'a option) -> ast -> 'a
+  val match_jane_syntax_piece : Feature.t -> ast -> ast * string list
 
   (** How to attach attributes to the result of [make_of_ast].  Will either
       return a pair (see [AST_with_attributes]) or will simply be equal to ['a]
