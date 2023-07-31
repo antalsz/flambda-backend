@@ -12,3 +12,4 @@ type ('a, 'b) cfn =
   a:local_ 'a -> ?b:local_ b -> local_ 'a -> (int -> local_ 'b)
 let () =
   let x = ((local_ ((42)[@inner ]))[@outer ]) in let local_ y = 47 in ()
+let _ = (local_ 1) + (exclave_ 2)

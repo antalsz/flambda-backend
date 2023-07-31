@@ -715,7 +715,7 @@ and sugar_expr ctxt f e =
 
 and expression ctxt f x =
   match Jane_syntax.Expression.of_ast x with
-  | Some (jexpr, attrs) -> jane_syntax_expr ctxt attrs f jexpr
+  | Some (jexpr, attrs) -> jane_syntax_expression ctxt attrs f jexpr
   | None ->
   if x.pexp_attributes <> [] then
     pp f "((%a)@,%a)" (expression ctxt) {x with pexp_attributes=[]}
@@ -868,6 +868,9 @@ and expression ctxt f x =
     | _ -> expression1 ctxt f x
 
 and expression1 ctxt f x =
+  match Jane_syntax.Expression.of_ast x with
+  | Some _ -> expression2 ctxt f x
+  | None ->
   if x.pexp_attributes <> [] then expression ctxt f x
   else match x.pexp_desc with
     | Pexp_object cs -> pp f "%a" (class_structure ctxt) cs
@@ -875,6 +878,9 @@ and expression1 ctxt f x =
 (* used in [Pexp_apply] *)
 
 and expression2 ctxt f x =
+  match Jane_syntax.Expression.of_ast x with
+  | Some _ -> simple_expr ctxt f x
+  | None ->
   if x.pexp_attributes <> [] then expression ctxt f x
   else match x.pexp_desc with
     | Pexp_field (e, li) ->
@@ -884,6 +890,9 @@ and expression2 ctxt f x =
     | _ -> simple_expr ctxt f x
 
 and simple_expr ctxt f x =
+  match Jane_syntax.Expression.of_ast x with
+  | Some (jexpr, attrs) -> jane_syntax_simple_expr ctxt attrs f jexpr
+  | None ->
   if x.pexp_attributes <> [] then expression ctxt f x
   else match x.pexp_desc with
     | Pexp_construct _  when is_simple_construct (view_expr x) ->
@@ -1857,9 +1866,9 @@ and directive_argument f x =
   | Pdir_ident (li) -> pp f "@ %a" longident li
   | Pdir_bool (b) -> pp f "@ %s" (string_of_bool b)
 
-and jane_syntax_expr ctxt attrs f (jexp : Jane_syntax.Expression.t) =
+and jane_syntax_expression ctxt attrs f (jexp : Jane_syntax.Expression.t) =
   if attrs <> [] then
-    pp f "((%a)@,%a)" (jane_syntax_expr ctxt []) jexp
+    pp f "((%a)@,%a)" (jane_syntax_expression ctxt []) jexp
       (attributes ctxt) attrs
   else match jexp with
   | Jexp_local x            -> local_expr ctxt f x
@@ -1877,6 +1886,20 @@ and local_expr ctxt f (lexp : Jane_syntax.Local.expression) =
     (* Synthesized to record that we should type-check this expression
        differently; not reflected in the output *)
     expression ctxt f expr
+
+and jane_syntax_simple_expr ctxt attrs f (jexp : Jane_syntax.Expression.t) =
+  let needs_parens =
+    attrs = [] &&
+    match jexp with
+    | Jexp_local (Lexp_local _ | Lexp_exclave _ | Lexp_constrain_local _) ->
+      true
+    | Jexp_comprehension ( Cexp_list_comprehension _
+                         | Cexp_array_comprehension _ )
+    | Jexp_immutable_array (Iaexp_immutable_array _)
+    | Jexp_unboxed_constant (Float _ | Integer _) ->
+      false
+  in
+  paren needs_parens (jane_syntax_expression ctxt attrs) f jexp
 
 and comprehension_expr ctxt f (cexp : Jane_syntax.Comprehensions.expression) =
   let punct, comp = match cexp with
