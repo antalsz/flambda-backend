@@ -1481,14 +1481,14 @@ and bindings ctxt f (rf,l) =
   let binding kwd rf f x =
     let x, is_local =
       match Jane_syntax.Expression.of_ast x.pvb_expr with
-      | Some (Jexp_local (Lexp_local expr), attrs) ->
+      | Some (Jexp_local (Lexp_local expr), []) ->
           let pat, pat_attrs = match Jane_syntax.Pattern.of_ast x.pvb_pat with
             | Some (Jpat_local (Lpat_local lpat), pat_attrs) -> lpat, pat_attrs
             | Some _ | None -> x.pvb_pat, x.pvb_attributes
           in
           let x = {x with pvb_pat = pat;
                           pvb_attributes = pat_attrs;
-                          pvb_expr = { expr with pexp_attributes = attrs } }
+                          pvb_expr = expr }
           in
           x, "local_ "
       | Some _ | None -> x, ""
