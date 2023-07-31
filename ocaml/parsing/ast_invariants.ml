@@ -53,7 +53,7 @@ let iterator =
     match jty with
     | Jtyp_local (Ltyp_local _) -> misplaced_local loc
   in
-  let typ_allow_local ty =
+  let typ_without_local ty =
     match Jane_syntax.Core_type.of_ast ty with
     | Some (Jtyp_local (Ltyp_local ty), []) -> ty
     | None -> ty
@@ -64,7 +64,7 @@ let iterator =
     begin match ty.ptyp_desc with
     | Ptyp_arrow (lab, ty1, ty2) ->
         let without_locals =
-          Ptyp_arrow(lab, typ_allow_local ty1, typ_allow_local ty2)
+          Ptyp_arrow(lab, typ_without_local ty1, typ_without_local ty2)
         in
         super.typ self { ty with ptyp_desc = without_locals }
     | _ ->

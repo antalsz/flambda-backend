@@ -18,35 +18,28 @@ open Lexing
 type t = Warnings.loc =
   { loc_start: position; loc_end: position; loc_ghost: bool };;
 
-let equal
-      { loc_start = { pos_fname = loc_start_pos_fname_1
-                    ; pos_lnum = loc_start_pos_lnum_1
-                    ; pos_bol = loc_start_pos_bol_1
-                    ; pos_cnum = loc_start_pos_cnum_1 }
-      ; loc_end = { pos_fname = loc_end_pos_fname_1
-                  ; pos_lnum = loc_end_pos_lnum_1
-                  ; pos_bol = loc_end_pos_bol_1
-                  ; pos_cnum = loc_end_pos_cnum_1 }
-      ; loc_ghost = loc_ghost_1 }
-      { loc_start = { pos_fname = loc_start_pos_fname_2
-                    ; pos_lnum = loc_start_pos_lnum_2
-                    ; pos_bol = loc_start_pos_bol_2
-                    ; pos_cnum = loc_start_pos_cnum_2 }
-      ; loc_end = { pos_fname = loc_end_pos_fname_2
-                  ; pos_lnum = loc_end_pos_lnum_2
-                  ; pos_bol = loc_end_pos_bol_2
-                  ; pos_cnum = loc_end_pos_cnum_2 }
-      ; loc_ghost = loc_ghost_2 }
+let equal_position
+      { pos_fname = pos_fname_1
+      ; pos_lnum = pos_lnum_1
+      ; pos_bol = pos_bol_1
+      ; pos_cnum = pos_cnum_1 }
+      { pos_fname = pos_fname_2
+      ; pos_lnum = pos_lnum_2
+      ; pos_bol = pos_bol_2
+      ; pos_cnum = pos_cnum_2 }
   =
-  String.equal loc_start_pos_fname_1 loc_start_pos_fname_2 &&
-  Int.equal    loc_start_pos_lnum_1  loc_start_pos_lnum_2  &&
-  Int.equal    loc_start_pos_bol_1   loc_start_pos_bol_2   &&
-  Int.equal    loc_start_pos_cnum_1  loc_start_pos_cnum_2  &&
-  String.equal loc_end_pos_fname_1   loc_end_pos_fname_2   &&
-  Int.equal    loc_end_pos_lnum_1    loc_end_pos_lnum_2    &&
-  Int.equal    loc_end_pos_bol_1     loc_end_pos_bol_2     &&
-  Int.equal    loc_end_pos_cnum_1    loc_end_pos_cnum_2    &&
-  Bool.equal   loc_ghost_1           loc_ghost_2
+  String.equal pos_fname_1 pos_fname_2 &&
+  Int.equal    pos_lnum_1  pos_lnum_2  &&
+  Int.equal    pos_bol_1   pos_bol_2   &&
+  Int.equal    pos_cnum_1  pos_cnum_2
+
+let equal
+      {loc_start = loc_start_1; loc_end = loc_end_1; loc_ghost = loc_ghost_1}
+      {loc_start = loc_start_2; loc_end = loc_end_2; loc_ghost = loc_ghost_2}
+  =
+  equal_position loc_start_1 loc_start_2 &&
+  equal_position loc_end_1   loc_end_2   &&
+  Bool.equal     loc_ghost_1 loc_ghost_2
 
 let in_file name =
   let loc = { dummy_pos with pos_fname = name } in

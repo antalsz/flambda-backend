@@ -3638,9 +3638,8 @@ let rec approx_type env sty =
         newty (Tarrow ((p,marg,mret), arg_ty.ctyp_type, ret, commu_ok))
       end
   | Ptyp_arrow (p, arg_sty, sty) ->
-      let arg_mode, arg_sty = Typetexp.unwrap_mode env arg_sty in
-      (* We want to shadow the old [arg_sty], but not use the new one, so we
-         ignore it. *)
+      let arg_mode, _arg_sty' = Typetexp.unwrap_mode env arg_sty in
+      let arg_sty = `Intentionally_shadowed in
       let _ = arg_sty in
       let arg =
         if is_optional p
