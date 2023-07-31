@@ -348,8 +348,8 @@ module MT = struct
     match Jane_syntax.Module_type.of_ast mty with
     | Some (jmty, attrs) -> begin
         let attrs = sub.attributes sub attrs in
-        match sub.module_type_jane_syntax sub jmty with
-        | Jmty_strengthen smty -> Jane_syntax.Strengthen.mty_of ~loc ~attrs smty
+        let jmty = sub.module_type_jane_syntax sub jmty in
+        Jane_syntax.Module_type.ast_of ~loc (jmty, attrs)
       end
     | None ->
     let attrs = sub.attributes sub attrs in
@@ -398,11 +398,9 @@ module MT = struct
     let open Sig in
     let loc = sub.location sub loc in
     match Jane_syntax.Signature_item.of_ast sigi with
-    | Some jsigi -> begin
-        match sub.signature_item_jane_syntax sub jsigi with
-        | Jsig_include_functor incl ->
-            Jane_syntax.Include_functor.sig_item_of ~loc incl
-    end
+    | Some jsigi ->
+        let jsigi = sub.signature_item_jane_syntax sub jsigi in
+        Jane_syntax.Signature_item.ast_of ~loc jsigi
     | None ->
     match desc with
     | Psig_value vd -> value ~loc (sub.value_description sub vd)
@@ -477,11 +475,9 @@ module M = struct
     let open Str in
     let loc = sub.location sub loc in
     match Jane_syntax.Structure_item.of_ast stri with
-    | Some jstri -> begin
-        match sub.structure_item_jane_syntax sub jstri with
-        | Jstr_include_functor incl ->
-            Jane_syntax.Include_functor.str_item_of ~loc incl
-    end
+    | Some jstri ->
+        let jstri = sub.structure_item_jane_syntax sub jstri in
+        Jane_syntax.Structure_item.ast_of ~loc jstri
     | None ->
     match desc with
     | Pstr_eval (x, attrs) ->

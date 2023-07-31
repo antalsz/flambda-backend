@@ -82,15 +82,14 @@ module Local = struct
   type nonrec pattern = Lpat_local of pattern
   (* Invariant: [Lpat_local] is always the outermost part of a pattern. *)
 
-  let type_of ~loc ~attrs = function
+  let type_of ~loc = function
     | Ltyp_local typ ->
       (* See Note [Wrapping with make_entire_jane_syntax] *)
       Core_type.make_entire_jane_syntax ~loc feature (fun () ->
         (* Although there's only one constructor here, the use of
            [constructor_argument] means we need to be able to tell the two uses
            apart *)
-        Core_type.make_jane_syntax feature ["type"; "local"] @@
-        Core_type.add_attributes attrs typ)
+        Core_type.make_jane_syntax feature ["type"; "local"] typ)
 
   let of_type typ =
     let typ, subparts = Core_type.match_jane_syntax_piece feature typ in
@@ -117,22 +116,19 @@ module Local = struct
     | ["constructor_argument"; "global"] -> Lcarg_global carg
     | _ -> fail_unknown_subparts ~loc:carg.ptyp_loc ~subparts ~feature
 
-  let expr_of ~loc ~attrs = function
+  let expr_of ~loc = function
     | Lexp_local expr ->
       (* See Note [Wrapping with make_entire_jane_syntax] *)
       Expression.make_entire_jane_syntax ~loc feature (fun () ->
-        Expression.make_jane_syntax feature ["local"] @@
-        Expression.add_attributes attrs expr)
+        Expression.make_jane_syntax feature ["local"] expr)
     | Lexp_exclave expr ->
       (* See Note [Wrapping with make_entire_jane_syntax] *)
       Expression.make_entire_jane_syntax ~loc feature (fun () ->
-        Expression.make_jane_syntax feature ["exclave"] @@
-        Expression.add_attributes attrs expr)
+        Expression.make_jane_syntax feature ["exclave"] expr)
     | Lexp_constrain_local expr ->
       (* See Note [Wrapping with make_entire_jane_syntax] *)
       Expression.make_entire_jane_syntax ~loc feature (fun () ->
-        Expression.make_jane_syntax feature ["constrain_local"] @@
-        Expression.add_attributes attrs expr)
+        Expression.make_jane_syntax feature ["constrain_local"] expr)
 
   let of_expr expr =
     let expr, subparts = Expression.match_jane_syntax_piece feature expr in
@@ -142,11 +138,10 @@ module Local = struct
     | ["constrain_local"] -> Lexp_constrain_local expr
     | subparts -> fail_unknown_subparts ~feature ~subparts ~loc:expr.pexp_loc
 
-  let pat_of ~loc ~attrs = function
+  let pat_of ~loc = function
     | Lpat_local pat ->
       (* See Note [Wrapping with make_entire_jane_syntax] *)
-      Pattern.make_entire_jane_syntax ~loc feature (fun () ->
-        Pattern.add_attributes attrs pat)
+      Pattern.make_entire_jane_syntax ~loc feature (fun () -> pat)
 
   let of_pat pat = Lpat_local pat
 end
@@ -232,24 +227,22 @@ module Comprehensions = struct
     | When cond ->
         comprehension_expr ["when"] (Ast_helper.Exp.sequence cond rest)
 
-  let expr_of_comprehension ~type_ ~attrs { body; clauses } =
+  let expr_of_comprehension ~type_ { body; clauses } =
     (* See Note [Wrapping with Pexp_lazy] *)
     comprehension_expr
       type_
-      (Expression.add_attributes
-         attrs
-         (Ast_helper.Exp.lazy_
-            (List.fold_right
-               expr_of_clause
-               clauses
-               (comprehension_expr ["body"] (Ast_helper.Exp.lazy_ body)))))
+      (Ast_helper.Exp.lazy_
+         (List.fold_right
+            expr_of_clause
+            clauses
+            (comprehension_expr ["body"] (Ast_helper.Exp.lazy_ body))))
 
-  let expr_of ~loc ~attrs cexpr =
+  let expr_of ~loc cexpr =
     (* See Note [Wrapping with make_entire_jane_syntax] *)
     Expression.make_entire_jane_syntax ~loc feature (fun () ->
       match cexpr with
       | Cexp_list_comprehension comp ->
-          expr_of_comprehension ~type_:["list"] ~attrs comp
+          expr_of_comprehension ~type_:["list"] comp
       | Cexp_array_comprehension (amut, comp) ->
           expr_of_comprehension
             ~type_:[ "array"
@@ -257,7 +250,6 @@ module Comprehensions = struct
                      | Mutable   -> "mutable"
                      | Immutable -> "immutable"
                    ]
-            ~attrs
             comp)
 
   (** Then, we define how to go from the OCaml AST to the nice AST; this is
@@ -378,21 +370,21 @@ module Immutable_arrays = struct
 
   let feature : Feature.t = Language_extension Immutable_arrays
 
-  let expr_of ~loc ~attrs = function
+  let expr_of ~loc = function
     | Iaexp_immutable_array elts ->
       (* See Note [Wrapping with make_entire_jane_syntax] *)
       Expression.make_entire_jane_syntax ~loc feature (fun () ->
-        Ast_helper.Exp.array ~attrs elts)
+        Ast_helper.Exp.array elts)
 
   let of_expr expr = match expr.pexp_desc with
     | Pexp_array elts -> Iaexp_immutable_array elts
     | _ -> failwith "Malformed immutable array expression"
 
-  let pat_of ~loc ~attrs = function
+  let pat_of ~loc = function
     | Iapat_immutable_array elts ->
       (* See Note [Wrapping with make_entire_jane_syntax] *)
       Pattern.make_entire_jane_syntax ~loc feature (fun () ->
-        Ast_helper.Pat.array ~attrs elts)
+        Ast_helper.Pat.array elts)
 
   let of_pat pat = match pat.ppat_desc with
     | Ppat_array elts -> Iapat_immutable_array elts
@@ -441,10 +433,10 @@ module Strengthen = struct
      the [(module M)] is a [Pmty_alias].  This isn't syntax we can write, but
      [(module M)] can be the inferred type for [M], so this should be fine. *)
 
-  let mty_of ~loc ~attrs { mty; mod_id } =
+  let mty_of ~loc { mty; mod_id } =
     (* See Note [Wrapping with make_entire_jane_syntax] *)
     Module_type.make_entire_jane_syntax ~loc feature (fun () ->
-      Ast_helper.Mty.functor_ ~attrs (Named (Location.mknoloc None, mty))
+      Ast_helper.Mty.functor_ (Named (Location.mknoloc None, mty))
         (Ast_helper.Mty.alias mod_id))
 
   (* Returns remaining unconsumed attributes *)
@@ -494,15 +486,15 @@ module Unboxed_constants = struct
     | Float (x, suffix) -> Pconst_float (x, suffix)
     | Integer (x, suffix) -> Pconst_integer (x, Some suffix)
 
-  let expr_of ~loc ~attrs t =
+  let expr_of ~loc t =
     let constant = constant_of t in
     Expression.make_entire_jane_syntax ~loc feature (fun () ->
-      Ast_helper.Exp.constant ~attrs constant)
+      Ast_helper.Exp.constant constant)
 
-  let pat_of ~loc ~attrs t =
+  let pat_of ~loc t =
     let constant = constant_of t in
     Pattern.make_entire_jane_syntax ~loc feature (fun () ->
-      Ast_helper.Pat.constant ~attrs constant)
+      Ast_helper.Pat.constant constant)
 end
 
 (******************************************************************************)
@@ -526,8 +518,10 @@ module Core_type = struct
 
   let of_ast = Core_type.make_of_ast ~of_ast_internal
 
-  let ast_of ~loc (jtyp, attrs) = match jtyp with
-    | Jtyp_local x -> Local.type_of ~loc ~attrs x
+  let ast_of ~loc (jtyp, attrs) =
+    Core_type.add_attributes attrs @@
+    match jtyp with
+    | Jtyp_local x -> Local.type_of ~loc x
 end
 
 module Constructor_argument = struct
@@ -564,11 +558,13 @@ module Expression = struct
 
   let of_ast = Expression.make_of_ast ~of_ast_internal
 
-  let ast_of ~loc (jexp, attrs) = match jexp with
-    | Jexp_local            x -> Local.expr_of             ~loc ~attrs x
-    | Jexp_comprehension    x -> Comprehensions.expr_of    ~loc ~attrs x
-    | Jexp_immutable_array  x -> Immutable_arrays.expr_of  ~loc ~attrs x
-    | Jexp_unboxed_constant x -> Unboxed_constants.expr_of ~loc ~attrs x
+  let ast_of ~loc (jexp, attrs) =
+    Expression.add_attributes attrs @@
+    match jexp with
+    | Jexp_local            x -> Local.expr_of             ~loc x
+    | Jexp_comprehension    x -> Comprehensions.expr_of    ~loc x
+    | Jexp_immutable_array  x -> Immutable_arrays.expr_of  ~loc x
+    | Jexp_unboxed_constant x -> Unboxed_constants.expr_of ~loc x
 end
 
 module Pattern = struct
@@ -588,10 +584,12 @@ module Pattern = struct
 
   let of_ast = Pattern.make_of_ast ~of_ast_internal
 
-  let ast_of ~loc (jpat, attrs) = match jpat with
-    | Jpat_local x -> Local.pat_of ~loc ~attrs x
-    | Jpat_immutable_array x -> Immutable_arrays.pat_of ~loc ~attrs x
-    | Jpat_unboxed_constant x -> Unboxed_constants.pat_of ~loc ~attrs x
+  let ast_of ~loc (jpat, attrs) =
+    Pattern.add_attributes attrs @@
+    match jpat with
+    | Jpat_local x -> Local.pat_of ~loc x
+    | Jpat_immutable_array x -> Immutable_arrays.pat_of ~loc x
+    | Jpat_unboxed_constant x -> Unboxed_constants.pat_of ~loc x
 end
 
 module Module_type = struct
@@ -605,8 +603,10 @@ module Module_type = struct
 
   let of_ast = Module_type.make_of_ast ~of_ast_internal
 
-  let ast_of ~loc (jmty, attrs) = match jmty with
-    | Jmty_strengthen x -> Strengthen.mty_of ~loc ~attrs x
+  let ast_of ~loc (jmty, attrs) =
+    Module_type.add_attributes attrs @@
+    match jmty with
+    | Jmty_strengthen x -> Strengthen.mty_of ~loc x
 end
 
 module Signature_item = struct

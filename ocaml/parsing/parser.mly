@@ -159,14 +159,14 @@ end
 let local_if : type ast. ast Local_syntax_category.t -> _ -> _ -> ast -> ast =
   fun cat is_local sloc x ->
   if is_local then
-    let make : loc:_ -> attrs:_ -> ast = match cat with
+    let make : loc:_ -> ast = match cat with
       | Type       -> Jane_syntax.Local.type_of (Ltyp_local x)
       | Expression -> Jane_syntax.Local.expr_of (Lexp_local x)
       | Pattern    -> Jane_syntax.Local.pat_of  (Lpat_local x)
       | Synthesized_constraint ->
         Jane_syntax.Local.expr_of (Lexp_constrain_local x)
     in
-    make ~loc:(make_loc sloc) ~attrs:[]
+    make ~loc:(make_loc sloc)
   else
     x
 
@@ -299,8 +299,7 @@ end
 
 let ppat_iarray loc elts =
   Jane_syntax.Immutable_arrays.pat_of
-    ~loc:(make_loc loc) ~attrs:[]
-    (Iapat_immutable_array elts)
+    ~loc:(make_loc loc) (Iapat_immutable_array elts)
 
 let expecting loc nonterm =
     raise Syntaxerr.(Error(Expecting(make_loc loc, nonterm)))
@@ -750,15 +749,13 @@ end = struct
     | Value const_value ->
         mkexp ~loc (Pexp_constant const_value)
     | Unboxed const_unboxed ->
-      Jane_syntax.Unboxed_constants.expr_of
-        ~loc:(make_loc loc) ~attrs:[] const_unboxed
+        Jane_syntax.Unboxed_constants.expr_of ~loc:(make_loc loc) const_unboxed
 
   let to_pattern ~loc : t -> pattern = function
     | Value const_value ->
         mkpat ~loc (Ppat_constant const_value)
     | Unboxed const_unboxed ->
-      Jane_syntax.Unboxed_constants.pat_of
-        ~loc:(make_loc loc) ~attrs:[] const_unboxed
+        Jane_syntax.Unboxed_constants.pat_of ~loc:(make_loc loc) const_unboxed
 
   let assert_is_value ~loc ~where : t -> Parsetree.constant = function
     | Value x -> x
@@ -2415,20 +2412,17 @@ labeled_simple_pattern:
       { (Labelled $1, None, $2) }
   | LABEL LPAREN LOCAL pattern RPAREN
       { (Labelled $1, None,
-         Jane_syntax.Local.pat_of ~loc:(make_loc $loc($3)) ~attrs:[]
-           (Lpat_local $4) ) }
+         Jane_syntax.Local.pat_of ~loc:(make_loc $loc($3)) (Lpat_local $4) ) }
   | simple_pattern
       { (Nolabel, None, $1) }
   | LPAREN LOCAL let_pattern RPAREN
       { (Nolabel, None,
-         Jane_syntax.Local.pat_of ~loc:(make_loc $loc($2)) ~attrs:[]
-           (Lpat_local $3)) }
+         Jane_syntax.Local.pat_of ~loc:(make_loc $loc($2)) (Lpat_local $3)) }
   | LABEL LPAREN poly_pattern RPAREN
       { (Labelled $1, None, $3) }
   | LABEL LPAREN LOCAL poly_pattern RPAREN
       { (Labelled $1, None,
-         Jane_syntax.Local.pat_of ~loc:(make_loc $loc($2)) ~attrs:[]
-           (Lpat_local $4)) }
+         Jane_syntax.Local.pat_of ~loc:(make_loc $loc($2)) (Lpat_local $4)) }
   | LPAREN poly_pattern RPAREN
       { (Nolabel, None, $2) }
 ;
@@ -2533,11 +2527,9 @@ expr:
      { not_expecting $loc($1) "wildcard \"_\"" }
 /* END AVOID */
   | LOCAL seq_expr
-     { Jane_syntax.Local.expr_of ~loc:(make_loc $sloc) ~attrs:[]
-         (Lexp_local $2) }
+     { Jane_syntax.Local.expr_of ~loc:(make_loc $sloc) (Lexp_local $2) }
   | EXCLAVE seq_expr
-     { Jane_syntax.Local.expr_of ~loc:(make_loc $sloc) ~attrs:[]
-         (Lexp_exclave $2) }
+     { Jane_syntax.Local.expr_of ~loc:(make_loc $sloc) (Lexp_exclave $2) }
 ;
 %inline expr_attrs:
   | LET MODULE ext_attributes mkrhs(module_name) module_binding_body IN seq_expr
@@ -2623,7 +2615,7 @@ simple_expr:
           ~loc:$sloc
           (fun ~loc elts ->
              Jane_syntax.Immutable_arrays.expr_of
-               ~loc:(make_loc loc) ~attrs:[]
+               ~loc:(make_loc loc)
                (Iaexp_immutable_array elts))
         $1
       }
@@ -2670,8 +2662,7 @@ comprehension_clause_binding:
       { Jane_syntax.Comprehensions.
           { pattern    = $3
           ; iterator   = In (Jane_syntax.Local.expr_of
-                               ~loc:(make_loc $sloc) ~attrs:[]
-                               (Lexp_local $5))
+                               ~loc:(make_loc $sloc) (Lexp_local $5))
           ; attributes = $1
           }
       }
@@ -2699,7 +2690,7 @@ comprehension_clause:
 
 %inline comprehension_expr:
   comprehension_ext_expr
-    { Jane_syntax.Comprehensions.expr_of ~loc:(make_loc $sloc) ~attrs:[] $1 }
+    { Jane_syntax.Comprehensions.expr_of ~loc:(make_loc $sloc) $1 }
 ;
 
 %inline array_simple(ARR_OPEN, ARR_CLOSE, contents_semi_list):
@@ -2887,8 +2878,7 @@ let_binding_body_no_punning:
       { let loc = ($startpos($1), $endpos($3)) in
         (ghpat ~loc (Ppat_constraint($1, $3)), $5) }
   | LOCAL let_ident local_strict_binding
-      { ($2, Jane_syntax.Local.expr_of ~loc:(make_loc $sloc) ~attrs:[]
-               (Lexp_local $3)) }
+      { ($2, Jane_syntax.Local.expr_of ~loc:(make_loc $sloc) (Lexp_local $3)) }
 ;
 let_binding_body:
   | let_binding_body_no_punning
@@ -2973,7 +2963,8 @@ local_fun_binding:
   | type_constraint EQUAL seq_expr
       { mkexp_constraint
           ~loc:$sloc
-          (Jane_syntax.Local.expr_of ~loc:(make_loc $sloc) ~attrs:[]
+          (Jane_syntax.Local.expr_of
+             ~loc:(make_loc $sloc)
              (Lexp_constrain_local $3))
           $1 }
 ;
