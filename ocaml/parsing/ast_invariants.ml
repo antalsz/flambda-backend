@@ -61,8 +61,8 @@ let iterator =
         local_with_attributes ty.ptyp_loc
   in
   let typ self ty =
-    begin match ty.ptyp_desc with
-    | Ptyp_arrow (lab, ty1, ty2) ->
+    begin match Jane_syntax.Core_type.of_ast ty, ty.ptyp_desc with
+    | None, Ptyp_arrow (lab, ty1, ty2) ->
         let without_locals =
           Ptyp_arrow(lab, typ_without_local ty1, typ_without_local ty2)
         in
@@ -81,8 +81,8 @@ let iterator =
     | _ -> ()
   in
   let pat self pat =
-    begin match pat.ppat_desc with
-    | Ppat_construct (_, Some (_, ({ppat_desc = Ppat_tuple _} as p)))
+    begin match Jane_syntax.Pattern.of_ast pat, pat.ppat_desc with
+    | None, Ppat_construct (_, Some (_, ({ppat_desc = Ppat_tuple _} as p)))
       when Builtin_attributes.explicit_arity pat.ppat_attributes ->
         super.pat self p (* allow unary tuple, see GPR#523. *)
     | _ ->

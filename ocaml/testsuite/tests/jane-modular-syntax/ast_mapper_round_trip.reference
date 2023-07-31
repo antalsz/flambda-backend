@@ -5,8 +5,7 @@ Program text:
 Pprintast (before Ast_mapper):
 ((local_ x)[@outer ])
 Pprintast (after Ast_mapper):
-local_ ((x)[@outer ])
-FAILURE: The Ast_mapper round trip was not a no-op.
+((local_ x)[@outer ])
 ---
 Test: Local: inner attribute
 Program text:
@@ -22,8 +21,7 @@ Program text:
 Pprintast (before Ast_mapper):
 ((local_ ((x)[@inner ]))[@outer ])
 Pprintast (after Ast_mapper):
-local_ ((x)[@inner ][@outer ])
-FAILURE: The Ast_mapper round trip was not a no-op.
+((local_ ((x)[@inner ]))[@outer ])
 ---
 Test: Local: multiple attributes
 Program text:
@@ -31,8 +29,7 @@ Program text:
 Pprintast (before Ast_mapper):
 ((local_ ((x)[@inner1 ][@inner2 ]))[@outer1 ][@outer2 ])
 Pprintast (after Ast_mapper):
-local_ ((x)[@inner1 ][@inner2 ][@outer1 ][@outer2 ])
-FAILURE: The Ast_mapper round trip was not a no-op.
+((local_ ((x)[@inner1 ][@inner2 ]))[@outer1 ][@outer2 ])
 ---
 Test: Comprehension: outer attribute
 Program text:
@@ -40,8 +37,7 @@ Program text:
 Pprintast (before Ast_mapper):
 (([x for x = 0 to 1])[@outer ])
 Pprintast (after Ast_mapper):
-FAILURE: [Pprintast] raised an unexpected exception.
-FAILURE: The Ast_mapper round trip was not a no-op.
+(([x for x = 0 to 1])[@outer ])
 ---
 Test: Comprehension: inner attribute
 Program text:
@@ -57,5 +53,4 @@ Program text:
 Pprintast (before Ast_mapper):
 (([((x)[@inner ]) for x = 0 to 1])[@outer ])
 Pprintast (after Ast_mapper):
-FAILURE: [Pprintast] raised an unexpected exception.
-FAILURE: The Ast_mapper round trip was not a no-op.
+(([((x)[@inner ]) for x = 0 to 1])[@outer ])

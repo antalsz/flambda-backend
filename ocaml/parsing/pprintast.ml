@@ -615,7 +615,7 @@ and label_exp ctxt f (l,opt,p) =
           non_punned ~is_local:None
       | None ->
       if is_punned p then
-        punned ~is_local:false
+       punned ~is_local:false
       else
         non_punned ~is_local:None
     end

@@ -72,10 +72,12 @@ module Local : sig
     | Lexp_exclave of Parsetree.expression
     (** [exclave_ EXPR] *)
     | Lexp_constrain_local of Parsetree.expression
-    (** This represents the shadow [local_] that is inserted on the RHS of a
-        [let local_ f : t = e in ...] binding.
+    (** This represents the shadow [local_] that is inserted on the right-hand
+        side of a [let local_ f : t = e in ...] binding; the contents of this
+        constructor are the [e] on the RHS.  This enables [e] to be correctly
+        checked at the local mode.
 
-        Invariant: [Lexp_constrain_local] occurs on the LHS of a
+        Invariant: [Lexp_constrain_local] occurs as the direct child of a
         [Pexp_constraint] or [Pexp_coerce] node.
 
         We don't inline the definition of [Pexp_constraint] or [Pexp_coerce]
@@ -276,11 +278,8 @@ module type AST = sig
   val of_ast : ast -> t option
 
   (** The dual of [of_ast], only used by [Ast_mapper].  This is built up from
-      the various [FEATURE.CATEGORY_of], such as [Local.type_of], which you
-      should prefer.  This generic version allows for easier construction of
-      OCaml AST terms from Jane syntax ASTs when you don't know which Jane
-      syntax feature you have; this doesn't occur very frequently, hence the
-      limited use. *)
+      the various [FEATURE.CATEGORY_of] functions, such as [Local.type_of],
+      which you should prefer. *)
   val ast_of : loc:Location.t -> t -> ast
 end
 

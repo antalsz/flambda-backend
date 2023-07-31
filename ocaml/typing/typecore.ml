@@ -2250,16 +2250,16 @@ let rec type_pat
   Builtin_attributes.warning_scope sp.ppat_attributes
     (fun () ->
        type_pat_aux tps category ~no_existentials ~mode
-         ~alloc_mode ~explicitly_local:false ~env sp expected_ty k
+         ~alloc_mode ~explicit_mode:Global ~env sp expected_ty k
     )
 
 and type_pat_aux
   : type k r . type_pat_state -> k pattern_category -> no_existentials:_
-         -> mode:_ -> alloc_mode:expected_pat_mode -> explicitly_local:_
-         -> env:_ -> _ -> _
+         -> mode:_ -> alloc_mode:expected_pat_mode
+         -> explicit_mode:Types.Alloc_mode.const -> env:_ -> _ -> _
          -> (k general_pattern -> r) -> r
   = fun tps category ~no_existentials ~mode
-      ~alloc_mode ~explicitly_local ~env sp expected_ty k ->
+      ~alloc_mode ~explicit_mode ~env sp expected_ty k ->
   let type_pat tps category ?(mode=mode) ?(alloc_mode=alloc_mode) ?(env=env) =
     type_pat tps category ~no_existentials ~mode ~alloc_mode ~env
   in
@@ -2315,7 +2315,7 @@ and type_pat_aux
       | Jpat_local (Lpat_local sp) ->
           type_pat_aux
             tps category
-            ~no_existentials ~mode ~alloc_mode ~explicitly_local:true ~env
+            ~no_existentials ~mode ~alloc_mode ~explicit_mode:Local ~env
             sp expected_ty k
       | Jpat_immutable_array (Iapat_immutable_array spl) ->
           type_pat_array Immutable spl attrs
@@ -2746,11 +2746,9 @@ and type_pat_aux
   | Ppat_constraint(sp', sty) ->
       assert construction_not_used_in_counterexamples;
       (* Pretend separate = true *)
-      let type_mode =
-        if explicitly_local then Alloc_mode.Local else Alloc_mode.Global
-      in
       let cty, ty, expected_ty' =
-        solve_Ppat_constraint ~refine tps loc env type_mode sty expected_ty in
+        solve_Ppat_constraint ~refine tps loc env explicit_mode sty expected_ty
+      in
       type_pat ~alloc_mode tps category sp' expected_ty' (fun p ->
         (*Format.printf "%a@.%a@."
           Printtyp.raw_type_expr ty
@@ -3672,18 +3670,15 @@ and approx_type_jst ~loc env _attrs : Jane_syntax.Core_type.t -> _ = function
          generate this *)
       raise (Typetexp.Error(loc, env, Misplaced_local))
 
-let rec type_pattern_approx ~explicitly_local env spat ty_expected =
+let rec type_pattern_approx ~explicit_mode env spat ty_expected =
   match Jane_syntax.Pattern.of_ast spat with
   | Some (jpat, _attrs) ->
       type_pattern_approx_jane_syntax ~env ~ty_expected jpat
   | None      ->
   match spat.ppat_desc with
   | Ppat_constraint(_, ({ptyp_desc=Ptyp_poly _} as sty)) ->
-      let arg_type_mode =
-        if explicitly_local then Alloc_mode.Local else Alloc_mode.Global
-      in
       let ty_pat =
-        Typetexp.transl_simple_type env ~closed:false arg_type_mode sty
+        Typetexp.transl_simple_type env ~closed:false explicit_mode sty
       in
       begin try unify env ty_pat.ctyp_type ty_expected with Unify trace ->
         raise(Error(spat.ppat_loc, env, Pattern_type_clash(trace, None)))
@@ -3693,11 +3688,9 @@ let rec type_pattern_approx ~explicitly_local env spat ty_expected =
 and type_pattern_approx_jane_syntax ~env ~ty_expected
   : Jane_syntax.Pattern.t -> _ = function
   | Jpat_local (Lpat_local spat) ->
-      type_pattern_approx ~explicitly_local:true env spat ty_expected
+      type_pattern_approx ~explicit_mode:Alloc_mode.Global env spat ty_expected
   | Jpat_immutable_array (Iapat_immutable_array _)
   | Jpat_unboxed_constant (Float _ | Integer _) -> ()
-
-let type_pattern_approx = type_pattern_approx ~explicitly_local:false
 
 let rec type_function_approx env loc label spato sexp in_function ty_expected =
   let spat_mode, has_poly =
@@ -3728,7 +3721,7 @@ let rec type_function_approx env loc label spato sexp in_function ty_expected =
   if has_poly then begin
     match spato with
     | None -> ()
-    | Some spat -> type_pattern_approx env spat ty_arg
+    | Some spat -> type_pattern_approx ~explicit_mode:Global env spat ty_arg
   end;
   let in_function = Some (loc_fun, ty_fun) in
   type_approx_aux env sexp in_function ty_ret

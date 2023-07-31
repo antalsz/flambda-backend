@@ -439,7 +439,6 @@ module Strengthen = struct
       Ast_helper.Mty.functor_ (Named (Location.mknoloc None, mty))
         (Ast_helper.Mty.alias mod_id))
 
-  (* Returns remaining unconsumed attributes *)
   let of_mty mty = match mty.pmty_desc with
     | Pmty_functor(Named(_, mty), {pmty_desc = Pmty_alias mod_id}) ->
        { mty; mod_id }
@@ -468,14 +467,12 @@ module Unboxed_constants = struct
     | _ -> fail_malformed ~loc
 
 
-  (* Returns remaining unconsumed attributes *)
   let of_expr expr =
     let loc = expr.pexp_loc in
     match expr.pexp_desc with
     | Pexp_constant const -> of_constant ~loc const
     | _ -> fail_malformed ~loc
 
-  (* Returns remaining unconsumed attributes *)
   let of_pat pat =
     let loc = pat.ppat_loc in
     match pat.ppat_desc with
