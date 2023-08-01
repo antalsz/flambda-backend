@@ -18,10 +18,4 @@
    like it in separate files, because the "compile and test output"
    infrastructure reports only one error at a time. *)
 
-(* This exception is no longer raisable directly, due to the requirement for
-   [_location] attributes whose locations are themselves ghost. *)
-let _former__misnamed_extension =
-  ()
-  [@jane.erasable.this_extension_doesn't_exist._location._nonghost]
-  [@jane.erasable.this_extension_doesn't_exist]
-;;
+let _misnamed_extension = () [@jane.erasable.this_extension_doesn't_exist];;

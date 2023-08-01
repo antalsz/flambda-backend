@@ -257,10 +257,6 @@ module Erasability = struct
     | Erasable
     | Non_erasable
 
-  let equal t1 t2 = match t1, t2 with
-    | Erasable, Erasable | Non_erasable, Non_erasable -> true
-    | (Erasable | Non_erasable), _ -> false
-
   let to_string = function
     | Erasable -> "erasable"
     | Non_erasable -> "non_erasable"
@@ -438,7 +434,7 @@ module Error = struct
     | Misnamed_embedding of
         Misnamed_embedding_error.t * string * Embedding_syntax.t
     | Bad_introduction of Embedding_syntax.t * Embedded_name.t
-    | Missing_location_attribute
+    | Cannot_restore_location_from_empty_loc_stack
 
   (** The exception type thrown when desugaring a piece of modular syntax from
       an OCaml AST *)
@@ -519,11 +515,10 @@ let report_error ~loc = function
         Embedded_name.pp_a_term (what, name)
         (Embedding_syntax.name what)
         Embedded_name.pp_a_term (what, { name with components = [ext] })
-  | Missing_location_attribute ->
+  | Cannot_restore_location_from_empty_loc_stack ->
       Location.errorf
         ~loc
-        "@[All attribute embeddings are expected to contain a location \
-           attribute,@ but one was missing here.@]"
+        "@[Tried to restore a saved location here, but none were found.@]"
 
 let () =
   Location.register_error_of_exn
@@ -554,7 +549,9 @@ module type AST_syntactic_category = sig
       [fun tm -> tm.pCAT_loc] for the appropriate syntactic category [CAT]. *)
   val location : ast -> Location.t
 
-  (** Set the location of an AST node. *)
+  (** Set the location of an AST node.  Should just be
+      [fun tm l -> {tm with pCAT_loc = l}] for the appropriate syntactic
+      category [CAT]. *)
   val with_location : ast -> Location.t -> ast
 end
 
@@ -579,6 +576,12 @@ module type AST_with_attributes_internal = sig
   include AST_internal with type 'ast with_attributes := 'ast * attributes
   val add_attributes : attributes -> ast -> ast
   val set_attributes : ast -> attributes -> ast
+end
+
+module type AST_with_attributes_and_loc_stack_internal = sig
+  include AST_with_attributes_internal
+  val save_location : ast -> ast
+  val restore_location : ast -> ast
 end
 
 (* Parses the embedded name from an embedding, raising if
@@ -675,81 +678,57 @@ module Make_with_attribute
 
     let embedding_syntax = Embedding_syntax.Attribute
 
-    let make_attr loc name =
-      let loc = Location.ghostify loc in
-      { attr_name = { txt = Embedded_name.to_string name; loc }
-      ; attr_loc = loc
-      ; attr_payload = PStr []
-      }
-
     let make_jane_syntax name ast =
-      let attr = make_attr !Ast_helper.default_loc name in
-      let attrs =
-        match Embedded_name.components name with
-        | [feature_component] ->
-            (* Outermost; save the location *)
-            let save_loc = location ast in
-            [ make_attr
-                save_loc
-                { name
-                  with components =
-                         [ feature_component
-                         ; "_location"
-                         ; if save_loc.loc_ghost then "_ghost" else "_nonghost"]
-                }
-            ; attr ]
-        | _ :: _ :: _ ->
-            [attr]
+      let attr =
+        { attr_name =
+            { txt = Embedded_name.to_string name
+            ; loc = !Ast_helper.default_loc
+            }
+        ; attr_loc = !Ast_helper.default_loc
+        ; attr_payload = PStr []
+        }
       in
-      add_attributes attrs ast
-
-    let restore_location_from_attr (name : Embedded_name.t) ast =
-      match name with
-      | { erasability; components = [feature_component] } ->
-          let raise_error err = raise (Error(location ast, err)) in
-          begin match Util.split_last_opt (attributes ast) with
-          | Some ( attrs
-                 , { attr_name = { txt; loc }
-                   ; attr_loc
-                   ; attr_payload = PStr [] } ) -> begin
-              match Embedded_name.of_string txt with
-              | Some (Ok
-                  { erasability = loc_erasability
-                  ; components = [ loc_feature_component
-                                 ; "_location"
-                                 ; ghostiness ]
-                  })
-                when (* Checks about the outer match, deferred so that
-                        [Misnamed_embedding] is raised preferentially *)
-                     loc.loc_ghost &&
-                     Location.equal loc attr_loc &&
-                     (* Checks about the inner match *)
-                     String.equal feature_component loc_feature_component &&
-                     Erasability.equal erasability loc_erasability ->
-                let restored_loc =
-                  { loc with loc_ghost = match ghostiness with
-                      | "_ghost" -> true
-                      | "_nonghost" -> false
-                      | _ -> raise_error Missing_location_attribute }
-                in
-                with_location (set_attributes ast attrs) restored_loc
-              | Some (Error err) ->
-                  raise_error (Misnamed_embedding (err, txt, Attribute))
-              | _ -> raise_error Missing_location_attribute
-            end
-          | _ -> raise_error Missing_location_attribute
-          end
-      | { erasability = _; components = _ :: _ :: _ } ->
-          ast
+      add_attributes [attr] ast
 
     let match_jane_syntax ast =
       match find_and_remove_jane_syntax_attribute (attributes ast) with
       | None -> None
       | Some (inner_attrs, name, outer_attrs) ->
-        Some (name,
-              (restore_location_from_attr name @@
-               set_attributes ast inner_attrs,
-               outer_attrs))
+        Some (name, (set_attributes ast inner_attrs, outer_attrs))
+end
+
+module Make_with_attribute_and_include_loc_stack
+    (AST_syntactic_category : sig
+       include AST_syntactic_category
+
+       val attributes : ast -> attributes
+       val set_attributes : ast -> attributes -> ast
+
+       val loc_stack : ast -> location_stack
+       val set_loc_stack : ast -> location_stack -> ast
+     end) : AST_with_attributes_and_loc_stack_internal
+              with type ast = AST_syntactic_category.ast
+= struct
+    open AST_syntactic_category
+    include Make_with_attribute (AST_syntactic_category)
+
+    (* [save_location] and [restore_location] operate on the {e bottom} of the
+       stack.  This isn't strictly correct, but few things inspect this and the
+       location isn't exactly wrong.  We need to do this because otherwise,
+       parentheses around a Jane Syntax expression interfere with the top of the
+       stack after [save_location] and cause only one layer of those parentheses
+       to be unwrapped by [restore_location]. *)
+
+    let save_location ast =
+      set_loc_stack ast (loc_stack ast @ [location ast])
+
+    let restore_location ast =
+      match Util.split_last_opt (loc_stack ast) with
+      | Some (new_loc_stack, new_loc) ->
+        set_loc_stack (with_location ast new_loc) new_loc_stack
+      | None ->
+        raise (Error (location ast,
+                      Cannot_restore_location_from_empty_loc_stack))
 end
 
 (** For a syntactic category, produce translations into and out of
@@ -822,10 +801,13 @@ module Type_AST_syntactic_category = struct
 
   let attributes typ = typ.ptyp_attributes
   let set_attributes typ ptyp_attributes = { typ with ptyp_attributes }
+
+  let loc_stack typ = typ.ptyp_loc_stack
+  let set_loc_stack typ ptyp_loc_stack = { typ with ptyp_loc_stack }
 end
 
 (** Types; embedded as [[[%jane.FEATNAME] * BODY]]. *)
-module Core_type0 = Make_with_attribute (struct
+module Core_type0 = Make_with_attribute_and_include_loc_stack (struct
     include Type_AST_syntactic_category
 
     let plural = "types"
@@ -839,7 +821,7 @@ module Constructor_argument0 = Make_with_attribute (struct
 end)
 
 (** Expressions; embedded using an attribute on the expression. *)
-module Expression0 = Make_with_attribute (struct
+module Expression0 = Make_with_attribute_and_include_loc_stack (struct
   type ast = expression
 
   let plural = "expressions"
@@ -848,10 +830,13 @@ module Expression0 = Make_with_attribute (struct
 
   let attributes expr = expr.pexp_attributes
   let set_attributes expr pexp_attributes = { expr with pexp_attributes }
+
+  let loc_stack expr = expr.pexp_loc_stack
+  let set_loc_stack expr pexp_loc_stack = { expr with pexp_loc_stack }
 end)
 
 (** Patterns; embedded using an attribute on the pattern. *)
-module Pattern0 = Make_with_attribute (struct
+module Pattern0 = Make_with_attribute_and_include_loc_stack (struct
   type ast = pattern
 
   let plural = "patterns"
@@ -860,6 +845,9 @@ module Pattern0 = Make_with_attribute (struct
 
   let attributes pat = pat.ppat_attributes
   let set_attributes pat ppat_attributes = { pat with ppat_attributes }
+
+  let loc_stack pat = pat.ppat_loc_stack
+  let set_loc_stack pat ppat_loc_stack = { pat with ppat_loc_stack }
 end)
 
 (** Module types; embedded using an attribute on the module type. *)
@@ -981,6 +969,13 @@ module type AST_with_attributes = sig
   val add_attributes : attributes -> ast -> ast
 end
 
+module type AST_with_attributes_and_loc_stack = sig
+  include AST_with_attributes
+
+  val save_location : ast -> ast
+  val restore_location : ast -> ast
+end
+
 module type Handle_attributes = sig
   type 'ast t
   val map_ast : f:('ast1 -> 'ast2) -> 'ast1 t -> 'ast2 t
@@ -1083,12 +1078,22 @@ struct
   let add_attributes = AST.add_attributes
 end
 
-module Expression = Make_attribute_ast(Expression0)
-module Pattern = Make_attribute_ast(Pattern0)
+module Make_attribute_ast_with_loc_stack
+    (AST : AST_with_attributes_and_loc_stack_internal)
+  : AST_with_attributes_and_loc_stack with type ast = AST.ast =
+struct
+  include Make_attribute_ast (AST)
+
+  let save_location = AST.save_location
+  let restore_location = AST.restore_location
+end
+
+module Expression = Make_attribute_ast_with_loc_stack(Expression0)
+module Pattern = Make_attribute_ast_with_loc_stack(Pattern0)
 module Module_type = Make_attribute_ast(Module_type0)
 module Signature_item = Make_extension_ast(Signature_item0)
 module Structure_item = Make_extension_ast(Structure_item0)
-module Core_type = Make_attribute_ast(Core_type0)
+module Core_type = Make_attribute_ast_with_loc_stack(Core_type0)
 module Extension_constructor = Make_attribute_ast(Extension_constructor0)
 
 module Constructor_argument = struct

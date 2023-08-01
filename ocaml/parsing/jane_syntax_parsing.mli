@@ -263,15 +263,34 @@ module type AST_with_attributes = sig
   val add_attributes : Parsetree.attributes -> ast -> ast
 end
 
+(** An [AST] that keeps track of attributes and a location stack.  This also
+    includes attribute- and location stack-manipulating functions.
+
+    If you are not adding an extra AST node, then you need to use
+    [save_location] and [restore_location] in order to manage the locations of
+    your Jane Syntax AST node correctly; for instance, in [local_ e],
+    [save_location] will preserve the location of [e] itself, which would
+    otherwise get overridden with the outer location. *)
+module type AST_with_attributes_and_loc_stack = sig
+  include AST_with_attributes
+
+  (** Take an AST term and save its current location on its location stack. *)
+  val save_location : ast -> ast
+
+  (** Take an AST term and set its current location to the top item of its
+      location stack.  Will raise an error if the location stack is empty. *)
+  val restore_location : ast -> ast
+end
+
 (** An [AST] that does not keep track of attributes. *)
 module type AST_without_attributes =
   AST with type 'ast with_attributes := 'ast
 
 module Expression :
-  AST_with_attributes with type ast = Parsetree.expression
+  AST_with_attributes_and_loc_stack with type ast = Parsetree.expression
 
 module Pattern :
-  AST_with_attributes with type ast = Parsetree.pattern
+  AST_with_attributes_and_loc_stack with type ast = Parsetree.pattern
 
 module Module_type :
   AST_with_attributes with type ast = Parsetree.module_type
@@ -283,7 +302,7 @@ module Structure_item :
   AST_without_attributes with type ast = Parsetree.structure_item
 
 module Core_type :
-  AST_with_attributes with type ast = Parsetree.core_type
+  AST_with_attributes_and_loc_stack with type ast = Parsetree.core_type
 
 module Constructor_argument :
   AST_without_attributes with type ast = Parsetree.core_type
