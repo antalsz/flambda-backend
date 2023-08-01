@@ -303,14 +303,13 @@ module Embedded_name : sig
       Not exposed. *)
   val of_string : string -> (t, Misnamed_embedding_error.t) result option
 
-  val marker_attribute_handler :
-    string list -> (loc:Location.t -> attribute)
-                 * (attributes -> attributes option)
-                 * (attributes -> bool)
+  (** Creates a "marker attribute name" (see the .mli file).  Should only be
+      used from [Marker_attributes].  Not exposed. *)
+  val marker_attribute_name : string list -> string
 
-  (** Checks whether a name is a "marker attribute name", as created by
-      [marker_attribute_handler] (see the .mli file).  Used to avoid trying to
-      desguar them as normal Jane syntax.  Not exposed. *)
+  (** Checks whether a name is a "marker attribute name" (see the .mli file), as
+      created by [marker_name].  Used to avoid trying to desguar them as normal
+      Jane syntax.  Not exposed. *)
   val is_marker : t -> bool
 
   (** Print out the embedded form of a Jane-syntax name, in quotes; for use in
@@ -379,29 +378,9 @@ end = struct
 
   let marker_component = "_marker"
 
-  let marker_attribute_handler components =
-    let t =
-      { erasability = Erasable; components = marker_component :: components }
-    in
-    let make ~loc =
-      let loc = Location.ghostify loc in
-      Ast_helper.Attr.mk ~loc (Location.mkloc (to_string t) loc) (PStr [])
-    in
-    let is_t = function
-      | { attr_name = { txt = name; loc = _ }
-        ; attr_payload = PStr []
-        ; attr_loc = _ } ->
-        String.equal (to_string t) name
-      | _ -> false
-    in
-    let extract attrs =
-      attrs |>
-      Util.find_map_last_and_split
-        ~f:(fun attr -> if is_t attr then Some () else None) |>
-      Option.map (fun (pre, (), post) -> pre @ post)
-    in
-    let has = List.exists is_t in
-    make, extract, has
+  let marker_attribute_name components =
+    to_string { erasability = Erasable
+              ; components = marker_component :: components }
 
   let is_marker = function
     | { erasability = Erasable; components = feature :: _ } ->
@@ -412,6 +391,10 @@ end = struct
 
   let pp_a_term ppf (esyn, t) =
     Format.fprintf ppf "%s %a" article Embedding_syntax.pp (esyn, to_string t)
+end
+
+module Marker_attributes = struct
+  let curry = Embedded_name.marker_attribute_name ["curry"]
 end
 
 (******************************************************************************)

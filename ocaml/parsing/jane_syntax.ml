@@ -49,18 +49,29 @@ let fail_unknown_subparts ~loc ~feature ~subparts =
     (Embedded_name.of_feature feature subparts)
 
 module Builtin = struct
-  let make_curry_attr, extract_curry_attr, has_curry_attr =
-    Embedded_name.marker_attribute_handler ["curry"]
+  let is_curry_attr = function
+    | { attr_name = { txt = name; loc = _ }
+      ; attr_payload = PStr []
+      ; attr_loc = _ } ->
+      String.equal Jane_syntax_parsing.Marker_attributes.curry name
+    | _ -> false
 
-  let is_curried typ = has_curry_attr typ.ptyp_attributes
+  let is_curried typ = List.exists is_curry_attr typ.ptyp_attributes
 
   let mark_curried ~loc typ = match typ.ptyp_desc with
     | Ptyp_arrow _ when not (is_curried typ) ->
-        Core_type.add_attributes [make_curry_attr ~loc] typ
+      let loc = Location.ghostify loc in
+      let curry_attr =
+        Ast_helper.Attr.mk
+          ~loc
+          (Location.mkloc Jane_syntax_parsing.Marker_attributes.curry loc)
+          (PStr [])
+      in
+      Core_type.add_attributes [curry_attr] typ
     | _ -> typ
 
   let non_syntax_attributes attrs =
-    Option.value ~default:attrs (extract_curry_attr attrs)
+    List.filter (fun attr -> not (is_curry_attr attr)) attrs
 end
 
 (** Locality modes *)
