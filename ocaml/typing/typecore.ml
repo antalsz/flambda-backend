@@ -663,7 +663,8 @@ let get_fun_arg_alloc_mode spat =
 let extract_constraint_alloc_mode pexp =
   match Jane_syntax.Expression.of_ast pexp with
   | Some (Jexp_local (Lexp_constrain_local pexp), attrs) ->
-      Alloc_mode.Local, {pexp with pexp_attributes = attrs}
+      Alloc_mode.Local,
+      {pexp with pexp_attributes = pexp.pexp_attributes @ attrs}
   | Some _ | None -> Alloc_mode.Global, pexp
 
 let has_poly_constraint spat =
