@@ -171,7 +171,26 @@ module type AST = sig
       given name (in the [Feature.t]) and body (the [ast]).  Any locations in
       the generated AST will be set to [!Ast_helper.default_loc], which should
       be [ghost].  The list of components should be nonempty; if it's empty, you
-      probably want [make_entire_jane_syntax] instead. *)
+      probably want [make_entire_jane_syntax] instead, and this function should
+      be called within its callback.  The inverse of [match_jane_syntax].
+
+      For example, to embed the different terms in the [-extension local]
+      expression AST, we write:
+
+      {[
+        let expr_of ~loc = function
+          | Lexp_local expr ->
+            (* See Note [Wrapping with make_entire_jane_syntax] *)
+            Expression.make_entire_jane_syntax ~loc feature (fun () ->
+              Expression.make_jane_syntax feature ["local"] @@
+              Expression.save_location expr)
+          | Lexp_exclave expr ->
+            (* See Note [Wrapping with make_entire_jane_syntax] *)
+            Expression.make_entire_jane_syntax ~loc feature (fun () ->
+              Expression.make_jane_syntax feature ["exclave"] @@
+              Expression.save_location expr)
+      ]}
+  *)
   val make_jane_syntax
     :  Feature.t
     -> string list
@@ -184,37 +203,56 @@ module type AST = sig
       provided location is used for the location of the resulting AST node.
       Additionally, [Ast_helper.default_loc] is set locally to the [ghost]
       version of that location, which is why the [ast] is generated from a
-      function call; it is during this call that the location is so set. *)
+      function call; it is during this call that the location is so set.
+
+      For example, to embed the single term in the [-extension immutable_arrays]
+      expression AST, we write:
+
+      {[
+        let expr_of ~loc = function
+          | Iaexp_immutable_array elts ->
+            (* See Note [Wrapping with make_entire_jane_syntax] *)
+            Expression.make_entire_jane_syntax ~loc feature (fun () ->
+              Ast_helper.Exp.array elts)
+      ]}
+
+      For any usage where there are multiple possible terms to embed in the same
+      syntactic category, you will also need to call [make_jane_syntax], which
+      see. *)
   val make_entire_jane_syntax
     :  loc:Location.t
     -> Feature.t
     -> (unit -> ast)
     -> ast
 
-  (* CR nroberts: if we go with this change, we should update this comment. *)
-  (* CR nroberts: Maybe it should be called just [match_jane_syntax] to more
-     strongly suggest that it is inverse to [make_jane_syntax]? Maybe the comment
-     should more clearly say that it is inverse?
-  *)
-  (** Given a *nested* term from one of our novel syntactic features that has
-      *already* been embedded in the AST by [make_jane_syntax], matches on the
-      name and AST of that embedding to lift it back to the Jane syntax AST.  By
-      "nested", this means the term ought to be a subcomponent of a
-      [make_entire_jane_syntax]-created term, created specifically by
-      [make_jane_syntax] with a nonempty list of components.
+  (** Given an embedding of a term from one of our novel syntactic features into
+      the AST, extracts the name (a [Feature.t]) and AST of that embedding.
+      This should only be used when the list of components will be nonempty; the
+      outermost embedded term (as created by [make_entire_jane_syntax]) will be
+      handled by [make_of_ast].  Will raise an exception if this wasn't an
+      embedded term.  The inverse of [make_jane_syntax].
+
+      This is usually followed by a match on the result to turn the result back
+      into a node from the feature-specific AST; in the failing case, an error
+      can be signaled with [raise_partial_match].
 
       For example, to distinguish between the different terms in the
       [-extension local] expression AST, we write:
 
       {[
-        let of_expr =
-          Expression.match_jane_syntax_piece feature @@ fun expr -> function
-          | ["local"] -> Some (Lexp_local expr)
-          | ["exclave"] -> Some (Lexp_exclave expr)
-          | _ -> None
+        let of_expr expr =
+          let expr, subparts = Expression.match_jane_syntax_piece feature expr in
+          match subparts with
+          | ["local"] -> Lexp_local (Expression.restore_location expr)
+          | ["exclave"] -> Lexp_exclave (Expression.restore_location expr)
+          | _ -> Expression.raise_partial_match feature expr subparts
       ]}
   *)
-  val match_jane_syntax_piece : Feature.t -> ast -> ast * string list
+  val match_jane_syntax : Feature.t -> ast -> ast * string list
+
+  (** Raise an error indicating that a [match_jane_syntax] call produced an
+      invalid embedding for the specified feature. *)
+  val raise_partial_match : Feature.t -> ast -> string list -> _
 
   (** How to attach attributes to the result of [make_of_ast].  Will either
       return a pair (see [AST_with_attributes]) or will simply be equal to ['a]

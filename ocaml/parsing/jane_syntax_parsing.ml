@@ -605,6 +605,7 @@ let find_and_remove_jane_syntax_attribute =
 module Desugaring_error = struct
   type error =
     | Wrong_embedding of Embedded_name.t
+    | Bad_embedding of string list
     | Non_embedding
     | Unexpected_attributes of attributes
 
@@ -624,6 +625,13 @@ module Desugaring_error = struct
       Location.errorf ~loc
         "Tried to desugar a non-embedded expression as part of a %a"
         report_term_for_feature feature
+    | Bad_embedding subparts ->
+      Location.errorf ~loc
+        "Unknown, unexpected, or malformed embedded %a at %a"
+        report_term_for_feature
+          feature
+        Embedded_name.pp_quoted_name
+          (Embedded_name.of_feature feature subparts)
     | Unexpected_attributes attrs ->
       Location.errorf ~loc
         "Non-Jane-syntax attributes were present \
@@ -937,7 +945,8 @@ module type AST = sig
   val make_jane_syntax : Feature.t -> string list -> ast -> ast
   val make_entire_jane_syntax :
     loc:Location.t -> Feature.t -> (unit -> ast) -> ast
-  val match_jane_syntax_piece : Feature.t -> ast -> ast * string list
+  val match_jane_syntax : Feature.t -> ast -> ast * string list
+  val raise_partial_match : Feature.t -> ast -> string list -> _
   val make_of_ast
     :  of_ast_internal:(Feature.t -> ast -> 'a option)
     -> (ast -> ('a with_attributes) option)
@@ -1029,7 +1038,7 @@ struct
     in
     of_ast
 
-  let match_jane_syntax_piece feature ast =
+  let match_jane_syntax feature ast =
     let raise_error err =
       raise (Desugaring_error.Error(location ast, feature, err))
     in
@@ -1047,6 +1056,11 @@ struct
         | _ -> raise_error (Wrong_embedding embedded_name)
       end
     | None -> raise_error Non_embedding
+
+  let raise_partial_match feature ast subparts =
+    raise (Desugaring_error.Error(location ast,
+                                  feature,
+                                  Bad_embedding subparts))
 end
 
 module Make_extension_ast

@@ -41,13 +41,6 @@ open Jane_syntax_parsing
    future syntax features to remember to do this wrapping.
 *)
 
-let fail_unknown_subparts ~loc ~feature ~subparts =
-  Location.raise_errorf ~loc
-    "Unexpected subparts \"%s\" of embedding %a."
-    (String.concat "." subparts)
-    Embedded_name.pp_quoted_name
-    (Embedded_name.of_feature feature subparts)
-
 module Builtin = struct
   let is_curry_attr = function
     | { attr_name = { txt = name; loc = _ }
@@ -104,10 +97,10 @@ module Local = struct
         Core_type.save_location typ)
 
   let of_type typ =
-    let typ, subparts = Core_type.match_jane_syntax_piece feature typ in
+    let typ, subparts = Core_type.match_jane_syntax feature typ in
     match subparts with
     | ["type"; "local"] -> Ltyp_local (Core_type.restore_location typ)
-    | _ -> fail_unknown_subparts ~loc:typ.ptyp_loc ~feature ~subparts
+    | _ -> Core_type.raise_partial_match feature typ subparts
 
   let constr_arg_of ~loc lcarg =
     (* See Note [Wrapping with make_entire_jane_syntax] *)
@@ -122,11 +115,11 @@ module Local = struct
 
   let of_constr_arg carg =
     let carg, subparts =
-      Constructor_argument.match_jane_syntax_piece feature carg
+      Constructor_argument.match_jane_syntax feature carg
     in
     match subparts with
     | ["constructor_argument"; "global"] -> Lcarg_global carg
-    | _ -> fail_unknown_subparts ~loc:carg.ptyp_loc ~subparts ~feature
+    | _ -> Constructor_argument.raise_partial_match feature carg subparts
 
   let expr_of ~loc = function
     | Lexp_local expr ->
@@ -146,13 +139,13 @@ module Local = struct
         Expression.save_location expr)
 
   let of_expr expr =
-    let expr, subparts = Expression.match_jane_syntax_piece feature expr in
+    let expr, subparts = Expression.match_jane_syntax feature expr in
     match subparts with
     | ["local"] -> Lexp_local (Expression.restore_location expr)
     | ["exclave"] -> Lexp_exclave (Expression.restore_location expr)
     | ["constrain_local"] ->
       Lexp_constrain_local (Expression.restore_location expr)
-    | subparts -> fail_unknown_subparts ~feature ~subparts ~loc:expr.pexp_loc
+    | _ -> Expression.raise_partial_match feature expr subparts
 
   let pat_of ~loc = function
     | Lpat_local pat ->
@@ -311,7 +304,7 @@ module Comprehensions = struct
   end
 
   let match_comprehension_piece expr =
-    let expr, subparts = Expression.match_jane_syntax_piece feature expr in
+    let expr, subparts = Expression.match_jane_syntax feature expr in
     match expr.pexp_attributes with
     | [] -> expr, subparts
     | _ :: _ as attrs ->
@@ -326,7 +319,7 @@ module Comprehensions = struct
         Range { start; stop; direction = Downto }
     | ["for"; "in"], Pexp_lazy seq ->
         In seq
-    | subparts, _ -> fail_unknown_subparts ~feature ~subparts ~loc:expr.pexp_loc
+    | _ -> Expression.raise_partial_match feature expr subparts
 
   let clause_binding_of_vb { pvb_pat; pvb_expr; pvb_attributes; pvb_loc = _ } =
     { pattern = pvb_pat
@@ -349,8 +342,8 @@ module Comprehensions = struct
             (raw_comprehension_of_expr rest)
       | ["body"], Pexp_lazy body ->
           { body; clauses = [] }
-      | subparts, _ ->
-          fail_unknown_subparts ~feature ~subparts ~loc:expr.pexp_loc
+      | _ ->
+          Expression.raise_partial_match feature expr subparts
     in
     fun expr ->
       match raw_comprehension_of_expr expr with
@@ -368,13 +361,13 @@ module Comprehensions = struct
         Cexp_array_comprehension (Mutable,
                                   comprehension_of_expr comp)
     | ["array"; "immutable"], Pexp_lazy comp ->
-      (* assert_extension_enabled:
-         See Note [Check for immutable extension in comprehensions code]
-      *)
-      assert_extension_enabled ~loc:expr.pexp_loc Immutable_arrays ();
-      Cexp_array_comprehension (Immutable,
-                                      comprehension_of_expr comp)
-    | subparts, _ -> fail_unknown_subparts ~feature ~subparts ~loc:expr.pexp_loc
+        (* assert_extension_enabled:
+           See Note [Check for immutable extension in comprehensions code]
+        *)
+        assert_extension_enabled ~loc:expr.pexp_loc Immutable_arrays ();
+        Cexp_array_comprehension (Immutable,
+                                  comprehension_of_expr comp)
+    | _ -> Expression.raise_partial_match feature expr subparts
 end
 
 (** Immutable arrays *)
