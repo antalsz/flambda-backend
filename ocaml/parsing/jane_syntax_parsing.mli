@@ -162,7 +162,13 @@ end
     [AST_without_attributes].  They reflect whether desugaring an OCaml AST into
     our extended one should ([with]) or shouldn't ([without]) return the
     attributes as well.  This choice is recorded in the [with_attributes]
-    type. *)
+    type.
+
+    If you construct a value of an AST without adding an extra intervening node,
+    then the locations will only be handled correctly if you are using one of
+    the ASTs that has a [loc_stack]; for instance, in [local_ e], this will
+    enable the Jane syntax machinery preserve the location of [e] itself, which
+    would otherwise get overridden with the outer location. *)
 module type AST = sig
   (** The AST type (e.g., [Parsetree.expression]) *)
   type ast
@@ -182,13 +188,11 @@ module type AST = sig
           | Lexp_local expr ->
             (* See Note [Wrapping with make_entire_jane_syntax] *)
             Expression.make_entire_jane_syntax ~loc feature (fun () ->
-              Expression.make_jane_syntax feature ["local"] @@
-              Expression.save_location expr)
+              Expression.make_jane_syntax feature ["local"] expr)
           | Lexp_exclave expr ->
             (* See Note [Wrapping with make_entire_jane_syntax] *)
             Expression.make_entire_jane_syntax ~loc feature (fun () ->
-              Expression.make_jane_syntax feature ["exclave"] @@
-              Expression.save_location expr)
+              Expression.make_jane_syntax feature ["exclave"] expr)
       ]}
   *)
   val make_jane_syntax
@@ -243,8 +247,8 @@ module type AST = sig
         let of_expr expr =
           let expr, subparts = Expression.match_jane_syntax_piece feature expr in
           match subparts with
-          | ["local"] -> Lexp_local (Expression.restore_location expr)
-          | ["exclave"] -> Lexp_exclave (Expression.restore_location expr)
+          | ["local"] -> Lexp_local expr
+          | ["exclave"] -> Lexp_exclave expr
           | _ -> Expression.raise_partial_match feature expr subparts
       ]}
   *)
@@ -293,34 +297,15 @@ module type AST_with_attributes = sig
   val add_attributes : Parsetree.attributes -> ast -> ast
 end
 
-(** An [AST] that keeps track of attributes and a location stack.  This also
-    includes attribute- and location stack-manipulating functions.
-
-    If you are not adding an extra AST node, then you need to use
-    [save_location] and [restore_location] in order to manage the locations of
-    your Jane Syntax AST node correctly; for instance, in [local_ e],
-    [save_location] will preserve the location of [e] itself, which would
-    otherwise get overridden with the outer location. *)
-module type AST_with_attributes_and_loc_stack = sig
-  include AST_with_attributes
-
-  (** Take an AST term and save its current location on its location stack. *)
-  val save_location : ast -> ast
-
-  (** Take an AST term and set its current location to the top item of its
-      location stack.  Will raise an error if the location stack is empty. *)
-  val restore_location : ast -> ast
-end
-
 (** An [AST] that does not keep track of attributes. *)
 module type AST_without_attributes =
   AST with type 'ast with_attributes := 'ast
 
 module Expression :
-  AST_with_attributes_and_loc_stack with type ast = Parsetree.expression
+  AST_with_attributes with type ast = Parsetree.expression
 
 module Pattern :
-  AST_with_attributes_and_loc_stack with type ast = Parsetree.pattern
+  AST_with_attributes with type ast = Parsetree.pattern
 
 module Module_type :
   AST_with_attributes with type ast = Parsetree.module_type
@@ -332,7 +317,7 @@ module Structure_item :
   AST_without_attributes with type ast = Parsetree.structure_item
 
 module Core_type :
-  AST_with_attributes_and_loc_stack with type ast = Parsetree.core_type
+  AST_with_attributes with type ast = Parsetree.core_type
 
 module Constructor_argument :
   AST_without_attributes with type ast = Parsetree.core_type

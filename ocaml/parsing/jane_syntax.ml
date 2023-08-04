@@ -93,13 +93,12 @@ module Local = struct
         (* Although there's only one constructor here, the use of
            [constructor_argument] means we need to be able to tell the two uses
            apart *)
-        Core_type.make_jane_syntax feature ["type"; "local"] @@
-        Core_type.save_location typ)
+        Core_type.make_jane_syntax feature ["type"; "local"] typ)
 
   let of_type typ =
     let typ, subparts = Core_type.match_jane_syntax feature typ in
     match subparts with
-    | ["type"; "local"] -> Ltyp_local (Core_type.restore_location typ)
+    | ["type"; "local"] -> Ltyp_local typ
     | _ -> Core_type.raise_partial_match feature typ subparts
 
   let constr_arg_of ~loc lcarg =
@@ -125,35 +124,31 @@ module Local = struct
     | Lexp_local expr ->
       (* See Note [Wrapping with make_entire_jane_syntax] *)
       Expression.make_entire_jane_syntax ~loc feature (fun () ->
-        Expression.make_jane_syntax feature ["local"] @@
-        Expression.save_location expr)
+        Expression.make_jane_syntax feature ["local"] expr)
     | Lexp_exclave expr ->
       (* See Note [Wrapping with make_entire_jane_syntax] *)
       Expression.make_entire_jane_syntax ~loc feature (fun () ->
-        Expression.make_jane_syntax feature ["exclave"] @@
-        Expression.save_location expr)
+        Expression.make_jane_syntax feature ["exclave"] expr)
     | Lexp_constrain_local expr ->
       (* See Note [Wrapping with make_entire_jane_syntax] *)
       Expression.make_entire_jane_syntax ~loc feature (fun () ->
-        Expression.make_jane_syntax feature ["constrain_local"] @@
-        Expression.save_location expr)
+        Expression.make_jane_syntax feature ["constrain_local"] expr)
 
   let of_expr expr =
     let expr, subparts = Expression.match_jane_syntax feature expr in
     match subparts with
-    | ["local"] -> Lexp_local (Expression.restore_location expr)
-    | ["exclave"] -> Lexp_exclave (Expression.restore_location expr)
+    | ["local"] -> Lexp_local expr
+    | ["exclave"] -> Lexp_exclave expr
     | ["constrain_local"] ->
-      Lexp_constrain_local (Expression.restore_location expr)
+      Lexp_constrain_local expr
     | _ -> Expression.raise_partial_match feature expr subparts
 
   let pat_of ~loc = function
     | Lpat_local pat ->
       (* See Note [Wrapping with make_entire_jane_syntax] *)
-      Pattern.make_entire_jane_syntax ~loc feature (fun () ->
-        Pattern.save_location pat)
+      Pattern.make_entire_jane_syntax ~loc feature (fun () -> pat)
 
-  let of_pat pat = Lpat_local (Pattern.restore_location pat)
+  let of_pat pat = Lpat_local pat
 end
 
 (** List and array comprehensions *)

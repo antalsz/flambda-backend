@@ -516,9 +516,9 @@ let () =
 
 (** The parameters that define how to look for [[%jane.*.FEATNAME]] and
     [[@jane.*.FEATNAME]] inside ASTs of a certain syntactic category. This
-    module type describes the input to the [Make_with_attribute] and
-    [Make_with_extension_node] functors (though they stipulate additional
-    requirements for their inputs).
+    module type describes the input to the [Make_with_attribute],
+    [Make_with_attribute_and_include_loc_stack], and [Make_with_extension_node]
+    functors (though they stipulate additional requirements for their inputs).
 *)
 module type AST_syntactic_category = sig
   (** The AST type (e.g., [Parsetree.expression]) *)
@@ -961,13 +961,6 @@ module type AST_with_attributes = sig
   val add_attributes : attributes -> ast -> ast
 end
 
-module type AST_with_attributes_and_loc_stack = sig
-  include AST_with_attributes
-
-  val save_location : ast -> ast
-  val restore_location : ast -> ast
-end
-
 module type Handle_attributes = sig
   type 'ast t
   val map_ast : f:('ast1 -> 'ast2) -> 'ast1 t -> 'ast2 t
@@ -990,10 +983,23 @@ module Uses_extensions = struct
   let assert_no_attributes ~loc:_ ~feature:_ ast = ast
 end
 
+module type Handle_location = sig
+  type ast
+
+  val save_location : ast -> ast
+  val restore_location : ast -> ast
+end
+
+module No_loc_stack = struct
+  let save_location = Fun.id
+  let restore_location = Fun.id
+end
+
 module Make_ast
     (Handle_attributes : Handle_attributes)
     (AST : AST_internal
              with type 'ast with_attributes := 'ast Handle_attributes.t)
+    (Handle_location : Handle_location with type ast := AST.ast)
   : AST with type ast = AST.ast
          and type 'ast with_attributes := 'ast Handle_attributes.t =
 struct
@@ -1007,7 +1013,8 @@ struct
   let make_entire_jane_syntax ~loc feature ast =
     AST.with_location
       (make_jane_syntax feature []
-         (Ast_helper.with_default_loc (Location.ghostify loc) ast))
+         (Ast_helper.with_default_loc (Location.ghostify loc)
+            (fun () -> Handle_location.save_location (ast ()))))
       loc
 
   (** Generically lift our custom ASTs for our novel syntax from OCaml ASTs. *)
@@ -1020,6 +1027,7 @@ struct
           match Feature.of_component name with
           | Ok feat -> Some begin
             ast_attrs |> Handle_attributes.map_ast ~f:(fun ast ->
+              let ast = Handle_location.restore_location ast in
               match of_ast_internal feat ast with
               | Some ext_ast -> ext_ast
               | None ->
@@ -1066,23 +1074,21 @@ end
 module Make_extension_ast
     (AST : AST_internal with type 'ast with_attributes := 'ast)
   : AST_without_attributes with type ast = AST.ast =
-  Make_ast (Uses_extensions) (AST)
+  Make_ast (Uses_extensions) (AST) (No_loc_stack)
 
 module Make_attribute_ast (AST : AST_with_attributes_internal)
   : AST_with_attributes with type ast = AST.ast =
 struct
-  include Make_ast (Uses_attributes) (AST)
+  include Make_ast (Uses_attributes) (AST) (No_loc_stack)
   let add_attributes = AST.add_attributes
 end
 
 module Make_attribute_ast_with_loc_stack
     (AST : AST_with_attributes_and_loc_stack_internal)
-  : AST_with_attributes_and_loc_stack with type ast = AST.ast =
+  : AST_with_attributes with type ast = AST.ast =
 struct
-  include Make_attribute_ast (AST)
-
-  let save_location = AST.save_location
-  let restore_location = AST.restore_location
+  include Make_ast (Uses_attributes) (AST) (AST)
+  let add_attributes = AST.add_attributes
 end
 
 module Expression = Make_attribute_ast_with_loc_stack(Expression0)

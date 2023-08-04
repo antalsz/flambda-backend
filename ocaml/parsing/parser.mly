@@ -130,19 +130,24 @@ let neg_string f =
 let mkuminus ~oploc name arg =
   match name, arg.pexp_desc with
   | "-", Pexp_constant(Pconst_integer (n,m)) ->
-      Pexp_constant(Pconst_integer(neg_string n,m)), arg.pexp_attributes
+      Pexp_constant(Pconst_integer(neg_string n,m)),
+      arg.pexp_loc_stack,
+      arg.pexp_attributes
   | ("-" | "-."), Pexp_constant(Pconst_float (f, m)) ->
-      Pexp_constant(Pconst_float(neg_string f, m)), arg.pexp_attributes
+      Pexp_constant(Pconst_float(neg_string f, m)),
+      arg.pexp_loc_stack,
+      arg.pexp_attributes
   | _ ->
-      Pexp_apply(mkoperator ~loc:oploc ("~" ^ name), [Nolabel, arg]), []
+      Pexp_apply(mkoperator ~loc:oploc ("~" ^ name), [Nolabel, arg]), [], []
 
 let mkuplus ~oploc name arg =
   let desc = arg.pexp_desc in
   match name, desc with
   | "+", Pexp_constant(Pconst_integer _)
-  | ("+" | "+."), Pexp_constant(Pconst_float _) -> desc, arg.pexp_attributes
+  | ("+" | "+."), Pexp_constant(Pconst_float _) ->
+      desc, arg.pexp_loc_stack, arg.pexp_attributes
   | _ ->
-      Pexp_apply(mkoperator ~loc:oploc ("~" ^ name), [Nolabel, arg]), []
+      Pexp_apply(mkoperator ~loc:oploc ("~" ^ name), [Nolabel, arg]), [], []
 
 let mk_attr ~loc name payload =
   Builtin_attributes.(register_attr Parser name);
@@ -498,8 +503,11 @@ let wrap_exp_attrs ~loc body (ext, attrs) =
   | None -> body
   | Some id -> ghexp(Pexp_extension (id, PStr [mkstrexp body []]))
 
-let mkexp_attrs ~loc d attrs =
-  wrap_exp_attrs ~loc (mkexp ~loc d) attrs
+let mkexp_attrs ~loc ?loc_stack d attrs =
+  let exp = wrap_exp_attrs ~loc (mkexp ~loc d) attrs in
+  match loc_stack with
+  | None -> exp
+  | Some pexp_loc_stack -> {exp with pexp_loc_stack}
 
 let wrap_typ_attrs ~loc typ (ext, attrs) =
   (* todo: keep exact location for the entire attribute *)
@@ -2498,8 +2506,8 @@ expr:
     simple_expr %prec below_HASH
       { $1 }
   | expr_attrs
-      { let desc, attrs = $1 in
-        mkexp_attrs ~loc:$sloc desc attrs }
+      { let desc, loc_stack, attrs = $1 in
+        mkexp_attrs ~loc:$sloc ~loc_stack desc attrs }
   | mkexp(expr_)
       { $1 }
   | let_bindings(ext) IN seq_expr
@@ -2533,45 +2541,45 @@ expr:
 ;
 %inline expr_attrs:
   | LET MODULE ext_attributes mkrhs(module_name) module_binding_body IN seq_expr
-      { Pexp_letmodule($4, $5, $7), $3 }
+      { Pexp_letmodule($4, $5, $7), [], $3 }
   | LET EXCEPTION ext_attributes let_exception_declaration IN seq_expr
-      { Pexp_letexception($4, $6), $3 }
+      { Pexp_letexception($4, $6), [], $3 }
   | LET OPEN override_flag ext_attributes module_expr IN seq_expr
       { let open_loc = make_loc ($startpos($2), $endpos($5)) in
         let od = Opn.mk $5 ~override:$3 ~loc:open_loc in
-        Pexp_open(od, $7), $4 }
+        Pexp_open(od, $7), [], $4 }
   | FUNCTION ext_attributes match_cases
-      { Pexp_function $3, $2 }
+      { Pexp_function $3, [], $2 }
   | FUN ext_attributes labeled_simple_pattern fun_def
       { let (l,o,p) = $3 in
-        Pexp_fun(l, o, p, $4), $2 }
+        Pexp_fun(l, o, p, $4), [], $2 }
   | FUN ext_attributes LPAREN TYPE lident_list RPAREN fun_def
-      { (mk_newtypes ~loc:$sloc $5 $7).pexp_desc, $2 }
+      { (mk_newtypes ~loc:$sloc $5 $7).pexp_desc, [], $2 }
   | MATCH ext_attributes seq_expr WITH match_cases
-      { Pexp_match($3, $5), $2 }
+      { Pexp_match($3, $5), [], $2 }
   | TRY ext_attributes seq_expr WITH match_cases
-      { Pexp_try($3, $5), $2 }
+      { Pexp_try($3, $5), [], $2 }
   | TRY ext_attributes seq_expr WITH error
       { syntax_error() }
   | IF ext_attributes seq_expr THEN expr ELSE expr
-      { Pexp_ifthenelse($3, $5, Some $7), $2 }
+      { Pexp_ifthenelse($3, $5, Some $7), [], $2 }
   | IF ext_attributes seq_expr THEN expr
-      { Pexp_ifthenelse($3, $5, None), $2 }
+      { Pexp_ifthenelse($3, $5, None), [], $2 }
   | WHILE ext_attributes seq_expr DO seq_expr DONE
-      { Pexp_while($3, $5), $2 }
+      { Pexp_while($3, $5), [], $2 }
   | FOR ext_attributes pattern EQUAL seq_expr direction_flag seq_expr DO
     seq_expr DONE
-      { Pexp_for($3, $5, $7, $6, $9), $2 }
+      { Pexp_for($3, $5, $7, $6, $9), [], $2 }
   | ASSERT ext_attributes simple_expr %prec below_HASH
-      { Pexp_assert $3, $2 }
+      { Pexp_assert $3, [], $2 }
   | LAZY ext_attributes simple_expr %prec below_HASH
-      { Pexp_lazy $3, $2 }
+      { Pexp_lazy $3, [], $2 }
   | subtractive expr %prec prec_unary_minus
-      { let desc, attrs = mkuminus ~oploc:$loc($1) $1 $2 in
-        desc, (None, attrs) }
+      { let desc, loc_stack, attrs = mkuminus ~oploc:$loc($1) $1 $2 in
+        desc, loc_stack, (None, attrs) }
   | additive expr %prec prec_unary_plus
-      { let desc, attrs = mkuplus ~oploc:$loc($1) $1 $2 in
-        desc, (None, attrs) }
+      { let desc, loc_stack, attrs = mkuplus ~oploc:$loc($1) $1 $2 in
+        desc, loc_stack, (None, attrs) }
 ;
 %inline expr_:
   | simple_expr nonempty_llist(labeled_simple_expr)

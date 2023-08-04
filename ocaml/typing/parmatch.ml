@@ -1914,17 +1914,14 @@ module Conv = struct
           mkpat (Ppat_record (fields, Open))
       | Tpat_array (am, lst) ->
           let pats = (List.map loop lst) in
-          let ppat, attrs = match am with
-            | Mutable   -> Ppat_array pats, []
-            | Immutable ->
-                let ppat =
-                  Jane_syntax.Immutable_arrays.pat_of
-                    ~loc:pat.pat_loc
-                    (Iapat_immutable_array pats)
-                in
-                ppat.ppat_desc, ppat.ppat_attributes
-          in
-          mkpat ~attrs ppat
+          begin match am with
+          | Mutable ->
+              mkpat (Ppat_array pats)
+          | Immutable ->
+              Jane_syntax.Immutable_arrays.pat_of
+                ~loc:pat.pat_loc
+                (Iapat_immutable_array pats)
+          end
       | Tpat_lazy p ->
           mkpat (Ppat_lazy (loop p))
     in
