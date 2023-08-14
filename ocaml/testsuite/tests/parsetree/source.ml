@@ -7448,3 +7448,136 @@ let g y =
   f ~(y:int)
 
 let goober a = match a with C (type a b) y -> y
+
+(* Annotations and let-bindings (from [pprint-type-annotations/test.ml]) *)
+
+(* Useful stuff for later *)
+module type T = sig end;;
+
+module Sub_int : sig
+  type t = private int;;
+  val make : int -> t
+end = struct
+  type t = int
+  let make x = x
+end;;
+
+(* Tests *)
+
+let test_lhs : int = 42;;
+
+let test_rhs = (42 : int);;
+
+let test_packed_lhs : (module T) = (module Int);;
+
+let test_packed_rhs = (module Int : T);;
+
+let test_fun_lhs x : int = x + 42;;
+
+let test_fun_rhs x = (x + 42 : int);;
+
+(* let test_coerce_from_to_lhs : Sub_int.t :> int = Sub_int.make 42;; *)
+(* Broken, does not round trip; becomes
+   {[
+   let test_coerce_from_to_lhs : int = (Sub_int.make 42 : Sub_int.t  :> int);;
+   ]}
+*)
+
+let test_coerce_from_to_rhs = (Sub_int.make 42 : Sub_int.t :> int);;
+
+(* let test_coerce_to_lhs :> int = Sub_int.make 42;; *)
+(* Broken, does not round trip; becomes
+   {[
+   let test_coerce_to_lhs : int = (Sub_int.make 42 :> int);;
+   ]}
+*)
+
+let test_coerce_to_rhs = (Sub_int.make 42 :> int);;
+
+let test_fun_coerce_from_to_lhs x : Sub_int.t :> int = Sub_int.make (x + 42);;
+
+let test_fun_coerce_from_to_rhs x = (Sub_int.make (x + 42) : Sub_int.t :> int);;
+
+let test_fun_coerce_to_lhs x :> int = Sub_int.make (42 + x);;
+
+let test_fun_coerce_to_rhs x = (Sub_int.make (42 + x) :> int);;
+
+let test_both : int = (42 : int);;
+
+let test_fun_both x : int = (x + 42 : int);;
+
+let test_double_fun_lhs x y : int -> int = fun z -> x + y + z;;
+
+let test_double_fun_rhs x y = ((fun z -> x + y + z) : int -> int);;
+
+let local_ test_local_lhs : int =
+  42
+in ();;
+
+let local_ test_local_rhs =
+  (42 : int)
+in ();;
+
+let local_ test_local_packed_lhs : (module T) =
+  (module Int)
+in ();;
+
+let local_ test_local_packed_rhs =
+  (module Int : T)
+in ();;
+
+let local_ test_local_fun_lhs x : int =
+  x + 42
+in ();;
+
+let local_ test_local_fun_rhs x =
+  (x + 42 : int)
+in ();;
+
+let local_ test_local_coerce_from_to_lhs : Sub_int.t :> int =
+  Sub_int.make 42
+in ();;
+
+let local_ test_local_coerce_from_to_rhs =
+  (Sub_int.make 42 : Sub_int.t :> int)
+in ();;
+
+let local_ test_local_coerce_to_lhs :> int =
+  Sub_int.make 42
+in ();;
+
+let local_ test_local_coerce_to_rhs =
+  (Sub_int.make 42 :> int)
+in ();;
+
+let local_ test_local_fun_coerce_from_to_lhs x : Sub_int.t :> int =
+  Sub_int.make (x + 42)
+in ();;
+
+let local_ test_local_fun_coerce_from_to_rhs x =
+  (Sub_int.make (x + 42) : Sub_int.t :> int)
+in ();;
+
+let local_ test_local_fun_coerce_to_lhs x :> int =
+  Sub_int.make (42 + x)
+in ();;
+
+let local_ test_local_fun_coerce_to_rhs x =
+  (Sub_int.make (42 + x) :> int)
+in ();;
+
+let local_ test_local_both : int =
+  (42 : int)
+in ();;
+
+let local_ test_local_fun_both x : int =
+  (x + 42 : int)
+in ();;
+
+let local_ test_local_double_fun_lhs x y : int -> int =
+  fun z -> x + y + z
+in ();;
+
+let local_ test_local_double_fun_rhs x y =
+  ((fun z -> x + y + z) : int -> int)
+in ();;
