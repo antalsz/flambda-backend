@@ -475,15 +475,15 @@ let submode ~loc ~env ~reason mode expected_mode =
 let escape ~loc ~env ~reason m =
   submode ~loc ~env ~reason m mode_global
 
-let check_eq_mode ~loc ~env m1 cm2 err =
-  match cm2 with
-  | Alloc_mode.Local -> begin
-      match Alloc_mode.equate m1 Alloc_mode.local with
+let alloc_mode_satisfies_annotation ~loc ~env m1 om2 err =
+  match om2 with
+  | Some m2 -> begin
+      match Alloc_mode.equate m1 (Alloc_mode.of_const m2) with
       | Ok () -> ()
       | Error () -> raise (Error(loc, env, err))
     end
-  | Alloc_mode.Global ->
-      (* We can always submode *)
+  | None ->
+      (* No constraints *)
       ()
 
 type expected_pat_mode =
@@ -656,9 +656,8 @@ let unwrap_local_pat spat = match Jane_syntax.Pattern.of_ast spat with
   | Some _ | None -> None
 
 let get_fun_arg_alloc_mode spat =
-  match unwrap_local_pat spat with
-  | Some _ -> Alloc_mode.Local
-  | None   -> Alloc_mode.Global
+  (* If there's an explicit [local_] annotation, return that information *)
+  Option.map (fun _ -> Alloc_mode.Local) (unwrap_local_pat spat)
 
 let extract_constraint_alloc_mode pexp =
   match Jane_syntax.Expression.of_ast pexp with
@@ -3696,7 +3695,7 @@ and type_pattern_approx_jane_syntax ~env ~ty_expected
 let rec type_function_approx env loc label spato sexp in_function ty_expected =
   let spat_mode, has_poly =
     match spato with
-    | None -> Alloc_mode.Global, false
+    | None -> None, false
     | Some spat ->
         let spat_mode = get_fun_arg_alloc_mode spat in
         let has_poly = has_poly_constraint spat in
@@ -3717,7 +3716,7 @@ let rec type_function_approx env loc label spato sexp in_function ty_expected =
       in
       raise (Error(loc_fun, env, err))
   in
-  check_eq_mode ~loc ~env arg_mode spat_mode
+  alloc_mode_satisfies_annotation ~loc ~env arg_mode spat_mode
     (Param_mode_mismatch ty_expected);
   if has_poly then begin
     match spato with
@@ -4475,7 +4474,7 @@ and type_expect_
       type_function ?in_function
         loc sexp.pexp_attributes env expected_mode
         ty_expected_explained Nolabel
-        ~arg_pat_mode:Alloc_mode.Global ~has_poly:false caselist
+        ~arg_pat_mode:None ~has_poly:false caselist
   | Pexp_apply
       ({ pexp_desc = Pexp_extension({txt = "extension.escape"}, PStr []) },
        [Nolabel, sbody]) ->
@@ -5816,7 +5815,7 @@ and type_function ?in_function loc attrs env (expected_mode : expected_mode)
       in
       raise (Error(loc_fun, env, err))
   in
-  check_eq_mode ~loc ~env arg_mode arg_pat_mode
+  alloc_mode_satisfies_annotation ~loc ~env arg_mode arg_pat_mode
     (Param_mode_mismatch ty_expected');
   if separate then begin
     end_def ();
