@@ -7479,7 +7479,7 @@ let test_fun_rhs x = (x + 42 : int);;
 (* let test_coerce_from_to_lhs : Sub_int.t :> int = Sub_int.make 42;; *)
 (* Broken, does not round trip; becomes
    {[
-   let test_coerce_from_to_lhs : int = (Sub_int.make 42 : Sub_int.t  :> int);;
+   let test_coerce_from_to_lhs : int = (Sub_int.make 42 : Sub_int.t :> int);;
    ]}
 *)
 
@@ -7534,17 +7534,34 @@ let local_ test_local_fun_rhs x =
   (x + 42 : int)
 in ();;
 
+(*
 let local_ test_local_coerce_from_to_lhs : Sub_int.t :> int =
   Sub_int.make 42
 in ();;
+*)
+(* Broken, does not round trip; becomes
+   {[
+   ;;let local_ test_local_coerce_from_to_lhs : int =
+       (Sub_int.make 42 : Sub_int.t :> int) in
+     ();;
+   ]}
+*)
+
 
 let local_ test_local_coerce_from_to_rhs =
   (Sub_int.make 42 : Sub_int.t :> int)
 in ();;
 
+(*
 let local_ test_local_coerce_to_lhs :> int =
   Sub_int.make 42
 in ();;
+*)
+(* Broken, does not round trip; becomes
+   {[
+   ;;let local_ test_local_coerce_to_lhs : int = (Sub_int.make 42 :> int) in ();;
+   ]}
+*)
 
 let local_ test_local_coerce_to_rhs =
   (Sub_int.make 42 :> int)

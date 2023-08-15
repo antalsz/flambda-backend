@@ -286,6 +286,19 @@ let string_quot f x = pp f "`%s" x
 
 let local_type pty ctxt f ty = pp f "local_ %a" (pty ctxt) ty
 
+type function_printing_type =
+  | Let_bound of
+      { is_local : bool
+      ; poly_newtype_tyvars : string Location.loc list option
+      }
+  | Lambda
+
+let pp_function_separator f ft =
+  pp f "%s"
+    (match ft with
+     | Let_bound _ -> "="
+     | Lambda -> "->")
+
 (* c ['a,'b] *)
 let rec class_params_def ctxt f =  function
   | [] -> ()
@@ -734,10 +747,10 @@ and expression ctxt f x =
     | Pexp_fun (l, e0, p, e) ->
         pp f "@[<2>fun@;%a@;%a@]"
           (label_exp ctxt) (l, e0, p)
-          (pp_print_pexp_function ctxt "->") e
+          (pp_print_pexp_function ctxt Lambda) e
     | Pexp_newtype (lid, e) ->
         pp f "@[<2>fun@;(type@;%s)@;%a@]" lid.txt
-          (pp_print_pexp_function ctxt "->") e
+          (pp_print_pexp_function ctxt Lambda) e
     | Pexp_function l ->
         pp f "@[<hv>function%a@]" (case_list ctxt) l
     | Pexp_match (e, l) ->
@@ -918,7 +931,7 @@ and simple_expr ctxt f x =
         pp f "(%a : %a)" (expression ctxt) e (core_type ctxt) ct
     | Pexp_coerce (e, cto1, ct) ->
         pp f "(%a%a :> %a)" (expression ctxt) e
-          (option (core_type ctxt) ~first:" : " ~last:" ") cto1 (* no sep hint*)
+          (option (core_type ctxt) ~first:" : ") cto1 (* no sep hint *)
           (core_type ctxt) ct
     | Pexp_variant (l, None) -> pp f "`%s" l
     | Pexp_record (l, eo) ->
@@ -1408,20 +1421,85 @@ and payload ctxt f = function
       pp f "?@ "; pattern ctxt f x;
       pp f " when "; expression ctxt f e
 
-and pp_print_pexp_function ctxt sep f x =
-  if x.pexp_attributes <> [] then pp f "%s@;%a" sep (expression ctxt) x
-  else match x.pexp_desc with
-    | Pexp_fun (label, eo, p, e) ->
-      pp f "%a@ %a"
-        (label_exp ctxt) (label,eo,p) (pp_print_pexp_function ctxt sep) e
-    | Pexp_newtype (str,e) ->
-      pp f "(type@ %s)@ %a" str.txt (pp_print_pexp_function ctxt sep) e
-    | _ ->
-       pp f "%s@;%a" sep (expression ctxt) x
+and pp_print_pexp_function ctxt ft f x =
+  let rec pp_print_pexp_function ~known_literal_function ctxt ft f x =
+    let pp_print_pexp_function =
+      pp_print_pexp_function ~known_literal_function:true
+    in
+    if x.pexp_attributes <> [] then
+      pp f "%a@;%a" pp_function_separator ft (expression ctxt) x
+    else match x.pexp_desc with
+      | Pexp_fun (label, eo, p, e) ->
+        pp f "%a@ %a"
+          (label_exp ctxt) (label,eo,p) (pp_print_pexp_function ctxt ft) e
+      | Pexp_newtype (str,e) ->
+        pp f "(type@ %s)@ %a" str.txt (pp_print_pexp_function ctxt ft) e
+      | _ ->
+         pp_function_body ~is_function:known_literal_function ctxt ft f x
+  in
+  pp_print_pexp_function ~known_literal_function:false ctxt ft f x
+
+and pp_function_body ~is_function ctxt ft f e =
+  let no_type_movement = (fun _ -> ()), e in
+  let return_type, body = match ft, e.pexp_attributes with
+    | Let_bound { is_local; poly_newtype_tyvars }, []
+      when is_function || Option.is_some poly_newtype_tyvars ->
+      (* Attributes being [] ought to be guaranteed given the conditions here,
+         but just in case *)
+      begin
+        let valid_constraint_body body =
+          if is_local then
+            match Jane_syntax.Expression.of_ast body with
+            | Some (Jexp_local (Lexp_constrain_local _), _) -> true
+            | _ -> false
+          else
+            true
+        in
+        match e.pexp_desc with
+        | Pexp_constraint(body, ty) when valid_constraint_body body ->
+            (fun f -> pp f ": %a%a "
+                        pp_poly_newtype_tyvars poly_newtype_tyvars
+                        (core_type ctxt) ty),
+            body
+        | Pexp_coerce(body, oty1, ty2) when valid_constraint_body body ->
+            (fun f -> pp f "%a%a:> %a "
+                        pp_poly_newtype_tyvars poly_newtype_tyvars
+                        (option (core_type ctxt) ~first:": " ~last:" ") oty1
+                        (core_type ctxt) ty2),
+            body
+        | _ ->
+            no_type_movement
+    end
+    | Let_bound { poly_newtype_tyvars; _ }, _ ->
+        (fun _ -> ()),
+        Option.fold ~none:Fun.id ~some:(List.fold_right Exp.newtype)
+          poly_newtype_tyvars e
+    | Lambda, _ ->
+        no_type_movement
+  in
+  pp f "%t%a@;%a"
+    return_type
+    pp_function_separator ft
+    (expression ctxt) body
+
+and pp_poly_newtype_tyvars f = function
+  | None | Some [] -> ()
+  | Some (_ :: _ as tyvars) ->
+    pp f "type %a.@;" (list string_loc) tyvars
 
 (* transform [f = fun g h -> ..] to [f g h = ... ] could be improved *)
 and binding ctxt f {pvb_pat=p; pvb_expr=x; _} =
   (* .pvb_attributes have already been printed by the caller, #bindings *)
+  let p, x, is_local =
+    match Jane_syntax.Expression.of_ast x with
+    | Some (Jexp_local (Lexp_local x), []) ->
+      let p = match Jane_syntax.Pattern.of_ast p with
+        | Some (Jpat_local (Lpat_local lpat), []) -> lpat
+        | Some _ | None -> p
+      in
+      p, x, true
+    | Some _ | None -> p, x, false
+  in
   let tyvars_str tyvars = List.map (fun v -> v.txt) tyvars in
   let is_desugared_gadt p e =
     let gadt_pattern =
@@ -1446,6 +1524,7 @@ and binding ctxt f {pvb_pat=p; pvb_expr=x; _} =
       if ety = pt_ct then
       Some (p, pt_tyvars, e_ct, e) else None
     | _ -> None in
+  if is_local then pp f "local_ ";
   if x.pexp_attributes <> []
   then
     match p with
@@ -1458,14 +1537,13 @@ and binding ctxt f {pvb_pat=p; pvb_expr=x; _} =
         pp f "%a@;=@;%a" (pattern ctxt) p (expression ctxt) x
   else
   match is_desugared_gadt p x with
-  | Some (p, [], ct, e) ->
-      pp f "%a@;: %a@;=@;%a"
-        (simple_pattern ctxt) p (core_type ctxt) ct (expression ctxt) e
-  | Some (p, tyvars, ct, e) -> begin
-    pp f "%a@;: type@;%a.@;%a@;=@;%a"
-    (simple_pattern ctxt) p (list pp_print_string ~sep:"@;")
-    (tyvars_str tyvars) (core_type ctxt) ct (expression ctxt) e
-    end
+  | Some (p, tyvars, ct, e) ->
+      pp f "%a@;%a"
+        (simple_pattern ctxt)
+        p
+        (pp_print_pexp_function ctxt
+           (Let_bound { is_local; poly_newtype_tyvars = Some tyvars }))
+        (Exp.constraint_ e ct)
   | None -> begin
       match p with
       | {ppat_desc=Ppat_constraint(p ,ty);
@@ -1480,7 +1558,9 @@ and binding ctxt f {pvb_pat=p; pvb_expr=x; _} =
           end
       | {ppat_desc=Ppat_var _; ppat_attributes=[]} ->
           pp f "%a@ %a" (simple_pattern ctxt) p
-            (pp_print_pexp_function ctxt "=") x
+            (pp_print_pexp_function ctxt
+               (Let_bound { is_local; poly_newtype_tyvars = None }))
+            x
       | _ ->
           pp f "%a@;=@;%a" (pattern ctxt) p (expression ctxt) x
     end
@@ -1488,21 +1568,7 @@ and binding ctxt f {pvb_pat=p; pvb_expr=x; _} =
 (* [in] is not printed *)
 and bindings ctxt f (rf,l) =
   let binding kwd rf f x =
-    let x, is_local =
-      match Jane_syntax.Expression.of_ast x.pvb_expr with
-      | Some (Jexp_local (Lexp_local expr), []) ->
-          let pat, pat_attrs = match Jane_syntax.Pattern.of_ast x.pvb_pat with
-            | Some (Jpat_local (Lpat_local lpat), pat_attrs) -> lpat, pat_attrs
-            | Some _ | None -> x.pvb_pat, x.pvb_attributes
-          in
-          let x = {x with pvb_pat = pat;
-                          pvb_attributes = pat_attrs;
-                          pvb_expr = expr }
-          in
-          x, "local_ "
-      | Some _ | None -> x, ""
-    in
-    pp f "@[<2>%s %a%s%a@]%a" kwd rec_flag rf is_local
+    pp f "@[<2>%s %a%a@]%a" kwd rec_flag rf
       (binding ctxt) x (item_attributes ctxt) x.pvb_attributes
   in
   match l with

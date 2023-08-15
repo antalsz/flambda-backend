@@ -58,28 +58,28 @@ val test_packed_rhs : (module T) = <module>
 let test_fun_lhs x : int = x + 42;;
 [%%expect{|
 
-let test_fun_lhs x = (x + 42 : int);;
+let test_fun_lhs x : int = x + 42;;
 val test_fun_lhs : int -> int = <fun>
 |}];;
 
 let test_fun_rhs x = (x + 42 : int);;
 [%%expect{|
 
-let test_fun_rhs x = (x + 42 : int);;
+let test_fun_rhs x : int = x + 42;;
 val test_fun_rhs : int -> int = <fun>
 |}];;
 
 let test_coerce_from_to_lhs : Sub_int.t :> int = Sub_int.make 42;;
 [%%expect{|
 
-let test_coerce_from_to_lhs : int = (Sub_int.make 42 : Sub_int.t  :> int);;
+let test_coerce_from_to_lhs : int = (Sub_int.make 42 : Sub_int.t :> int);;
 val test_coerce_from_to_lhs : int = 42
 |}];;
 
 let test_coerce_from_to_rhs = (Sub_int.make 42 : Sub_int.t :> int);;
 [%%expect{|
 
-let test_coerce_from_to_rhs = (Sub_int.make 42 : Sub_int.t  :> int);;
+let test_coerce_from_to_rhs = (Sub_int.make 42 : Sub_int.t :> int);;
 val test_coerce_from_to_rhs : int = 42
 |}];;
 
@@ -100,30 +100,28 @@ val test_coerce_to_rhs : int = 42
 let test_fun_coerce_from_to_lhs x : Sub_int.t :> int = Sub_int.make (x + 42);;
 [%%expect{|
 
-let test_fun_coerce_from_to_lhs x =
-  (Sub_int.make (x + 42) : Sub_int.t  :> int);;
+let test_fun_coerce_from_to_lhs x : Sub_int.t :> int = Sub_int.make (x + 42);;
 val test_fun_coerce_from_to_lhs : int -> int = <fun>
 |}];;
 
 let test_fun_coerce_from_to_rhs x = (Sub_int.make (x + 42) : Sub_int.t :> int);;
 [%%expect{|
 
-let test_fun_coerce_from_to_rhs x =
-  (Sub_int.make (x + 42) : Sub_int.t  :> int);;
+let test_fun_coerce_from_to_rhs x : Sub_int.t :> int = Sub_int.make (x + 42);;
 val test_fun_coerce_from_to_rhs : int -> int = <fun>
 |}];;
 
 let test_fun_coerce_to_lhs x :> int = Sub_int.make (42 + x);;
 [%%expect{|
 
-let test_fun_coerce_to_lhs x = (Sub_int.make (42 + x) :> int);;
+let test_fun_coerce_to_lhs x :> int = Sub_int.make (42 + x);;
 val test_fun_coerce_to_lhs : int -> int = <fun>
 |}];;
 
 let test_fun_coerce_to_rhs x = (Sub_int.make (42 + x) :> int);;
 [%%expect{|
 
-let test_fun_coerce_to_rhs x = (Sub_int.make (42 + x) :> int);;
+let test_fun_coerce_to_rhs x :> int = Sub_int.make (42 + x);;
 val test_fun_coerce_to_rhs : int -> int = <fun>
 |}];;
 
@@ -137,21 +135,21 @@ val test_both : int = 42
 let test_fun_both x : int = (x + 42 : int);;
 [%%expect{|
 
-let test_fun_both x = ((x + 42 : int) : int);;
+let test_fun_both x : int = (x + 42 : int);;
 val test_fun_both : int -> int = <fun>
 |}];;
 
 let test_double_fun_lhs x y : int -> int = fun z -> x + y + z;;
 [%%expect{|
 
-let test_double_fun_lhs x y = (fun z -> (x + y) + z : int -> int);;
+let test_double_fun_lhs x y : int -> int = fun z -> (x + y) + z;;
 val test_double_fun_lhs : int -> int -> int -> int = <fun>
 |}];;
 
 let test_double_fun_rhs x y = ((fun z -> x + y + z) : int -> int);;
 [%%expect{|
 
-let test_double_fun_rhs x y = (fun z -> (x + y) + z : int -> int);;
+let test_double_fun_rhs x y : int -> int = fun z -> (x + y) + z;;
 val test_double_fun_rhs : int -> int -> int -> int = <fun>
 |}];;
 
@@ -196,7 +194,7 @@ let local_ test_local_fun_lhs x : int =
 in ();;
 [%%expect{|
 
-;;let local_ test_local_fun_lhs x = (x + 42 : int) in ();;
+;;let local_ test_local_fun_lhs x : int = x + 42 in ();;
 - : unit = ()
 |}];;
 
@@ -215,7 +213,7 @@ in ();;
 [%%expect{|
 
 ;;let local_ test_local_coerce_from_to_lhs : int =
-    (Sub_int.make 42 : Sub_int.t  :> int) in
+    (Sub_int.make 42 : Sub_int.t :> int) in
   ();;
 - : unit = ()
 |}];;
@@ -226,7 +224,7 @@ in ();;
 [%%expect{|
 
 ;;let local_ test_local_coerce_from_to_rhs =
-    (Sub_int.make 42 : Sub_int.t  :> int) in
+    (Sub_int.make 42 : Sub_int.t :> int) in
   ();;
 - : unit = ()
 |}];;
@@ -254,8 +252,8 @@ let local_ test_local_fun_coerce_from_to_lhs x : Sub_int.t :> int =
 in ();;
 [%%expect{|
 
-;;let local_ test_local_fun_coerce_from_to_lhs x =
-    (Sub_int.make (x + 42) : Sub_int.t  :> int) in
+;;let local_ test_local_fun_coerce_from_to_lhs x : Sub_int.t :> int =
+    Sub_int.make (x + 42) in
   ();;
 - : unit = ()
 |}];;
@@ -266,7 +264,7 @@ in ();;
 [%%expect{|
 
 ;;let local_ test_local_fun_coerce_from_to_rhs x =
-    (Sub_int.make (x + 42) : Sub_int.t  :> int) in
+    (Sub_int.make (x + 42) : Sub_int.t :> int) in
   ();;
 - : unit = ()
 |}];;
@@ -276,7 +274,7 @@ let local_ test_local_fun_coerce_to_lhs x :> int =
 in ();;
 [%%expect{|
 
-;;let local_ test_local_fun_coerce_to_lhs x = (Sub_int.make (42 + x) :> int) in
+;;let local_ test_local_fun_coerce_to_lhs x :> int = Sub_int.make (42 + x) in
   ();;
 - : unit = ()
 |}];;
@@ -305,7 +303,7 @@ let local_ test_local_fun_both x : int =
 in ();;
 [%%expect{|
 
-;;let local_ test_local_fun_both x = ((x + 42 : int) : int) in ();;
+;;let local_ test_local_fun_both x : int = (x + 42 : int) in ();;
 - : unit = ()
 |}];;
 
@@ -314,8 +312,8 @@ let local_ test_local_double_fun_lhs x y : int -> int =
 in ();;
 [%%expect{|
 
-;;let local_ test_local_double_fun_lhs x y =
-    (fun z -> (x + y) + z : int -> int) in
+;;let local_ test_local_double_fun_lhs x y : int -> int =
+    fun z -> (x + y) + z in
   ();;
 - : unit = ()
 |}];;
