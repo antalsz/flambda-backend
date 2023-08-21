@@ -1700,14 +1700,14 @@ and type_def_list ctxt f (rf, exported, l) =
                  (list ~sep:"@," (type_decl "and" Recursive)) xs
 
 and record_declaration ctxt f lbls =
-  let pld_mode_type_attrs pld =
+  let pld_mode_type_attrs pld : _ format6 * _ =
     match Jane_syntax.Constructor_argument.of_ast pld.pld_type with
-    | Some (Jcarg_local (Lcarg_global carg)) -> "global_ ", carg
+    | Some (Jcarg_local (Lcarg_global carg)) -> "global_@;", carg
     | None -> "", pld.pld_type
   in
   let type_record_field f pld =
     let mode_flag, pld_type = pld_mode_type_attrs pld in
-    pp f "@[<2>%a%s%s:@;%a@;%a@]"
+    pp f "@[<2>%a%(%)%s:@;%a@;%a@]"
       mutable_flag pld.pld_mutable
       mode_flag
       pld.pld_name.txt
@@ -1782,6 +1782,13 @@ and type_extension ctxt f x =
     (item_attributes ctxt) x.ptyext_attributes
 
 and constructor_declaration ctxt f (name, vars, args, res, attrs) =
+  let constructor_arg ctxt f carg =
+    match Jane_syntax.Constructor_argument.of_ast carg with
+    | Some (Jcarg_local (Lcarg_global carg)) ->
+        pp f "global_@;%a" (core_type1 ctxt) carg
+    | None ->
+        core_type1 ctxt f carg
+  in
   let name =
     match name with
     | "::" -> "(::)"
@@ -1796,7 +1803,7 @@ and constructor_declaration ctxt f (name, vars, args, res, attrs) =
         (fun f -> function
            | Pcstr_tuple [] -> ()
            | Pcstr_tuple l ->
-             pp f "@;of@;%a" (list (core_type1 ctxt) ~sep:"@;*@;") l
+             pp f "@;of@;%a" (list (constructor_arg ctxt) ~sep:"@;*@;") l
            | Pcstr_record l -> pp f "@;of@;%a" (record_declaration ctxt) l
         ) args
         (attributes ctxt) attrs
