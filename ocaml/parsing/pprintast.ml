@@ -1700,14 +1700,16 @@ and type_def_list ctxt f (rf, exported, l) =
                  (list ~sep:"@," (type_decl "and" Recursive)) xs
 
 and record_declaration ctxt f lbls =
-  let pld_mode_type_attrs pld : _ format6 * _ =
+  let pld_mode_type_attrs pld =
     match Jane_syntax.Constructor_argument.of_ast pld.pld_type with
-    | Some (Jcarg_local (Lcarg_global carg)) -> "global_@;", carg
-    | None -> "", pld.pld_type
+    | Some (Jcarg_local (Lcarg_global carg)) ->
+        (fun f -> pp f "global_@;"), carg
+    | None ->
+        (fun _ -> ()), pld.pld_type
   in
   let type_record_field f pld =
     let mode_flag, pld_type = pld_mode_type_attrs pld in
-    pp f "@[<2>%a%(%)%s:@;%a@;%a@]"
+    pp f "@[<2>%a%t%s:@;%a@;%a@]"
       mutable_flag pld.pld_mutable
       mode_flag
       pld.pld_name.txt
